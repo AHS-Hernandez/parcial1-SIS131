@@ -119,6 +119,21 @@ Dueño: `modRegisters`. Cada uno es `Byte`. La hoja solo los refleja.
 
 PC después de FFh vuelve a 00h. Ese módulo vive en `modRegisters`, no repartido por los saltos.
 
+### Decisión de diseño: complemento a 2
+
+La consigna dice que SF vale 1 si el resultado es negativo, y no dice en qué sistema. La decisión es leer cada byte en **complemento a 2**, con rango **−128…127**.
+
+El mismo patrón de 8 bits sigue guardado como 0…255. El signo no es otro registro: es el bit 7.
+
+| Byte | Sin signo | Con signo |
+|---|---:|---:|
+| 00h | 0 | 0 |
+| 7Fh | 127 | 127 |
+| 80h | 128 | −128 |
+| FFh | 255 | −1 |
+
+Así `00h − 01h` guarda FFh, SF queda en 1 y se puede explicar como −1. ZF sigue mirando si el byte es 00h. CF no usa el signo: es acarreo o préstamo sin signo, y lo calcula la ALU. `modFlags` solo recibe el resultado y ese acarreo.
+
 ### 1.3 Flags
 
 Dueño: `modFlags`. Tres bits, no un registro de 8.
