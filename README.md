@@ -11,7 +11,7 @@ Simulador de CPU von Neumann/x86 de **8 bits** en Microsoft Excel + VBA (`.xlsm`
 | Ruta | Contenido |
 |---|---|
 | `SimuladorCPU.xlsm` | Libro con macros (raíz del repositorio) |
-| `docs/` | Análisis, arquitectura y defensa. Análisis de la consigna: [`docs/ANALISIS.md`](docs/ANALISIS.md) |
+| `docs/` | Análisis, arquitectura y defensa. [`docs/ANALISIS.md`](docs/ANALISIS.md), [`docs/ARQUITECTURA.md`](docs/ARQUITECTURA.md) |
 | `src/` | Código VBA exportado como texto |
 
 El `.xlsm` vive en la raíz. `src/` guarda los módulos exportados para versionarlos; mientras no haya exportación, la carpeta se mantiene con `.gitkeep`.
