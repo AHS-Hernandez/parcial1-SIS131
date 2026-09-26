@@ -2,9 +2,10 @@ Attribute VB_Name = "modControlUnit"
 Option Explicit
 
 ' Maquina de estados: eCPUState + ePhase. DoStep = una micro-operacion.
-' La fase visible es la del micro que acaba de correr; la siguiente se arma al inicio del proximo STEP.
-' En la ventana Inmediato: PruebaFetch, PruebaDecode, PruebaDoStep
-' Traza manual: MOV AX,01h (10h 01h) luego HLT (FFh) — ANALISIS 6.4
+' DoRun agenda el siguiente DoStep con Application.OnTime (rngDelay ms).
+' DoPause cancela el disparo sin perder registros. DoReset no borra la RAM.
+' En la ventana Inmediato: PruebaFetch, PruebaDecode, PruebaDoStep, PruebaRunPauseReset
+' Traza manual: MOV AX,01h (10h 01h) luego HLT (FFh) - ANALISIS 6.4
 
 Public Enum eCPUState
     RUNNING = 0
@@ -30,6 +31,11 @@ Private mEsperandoOperando As Boolean
 Private mPasoGlobal As Long
 Private mHaySiguiente As Boolean
 Private mFaseSiguiente As ePhase
+Private mRunAgendado As Boolean
+Private mProximaEjecucion As Date
+Private mDelayMsFallback As Long
+Private Const PROC_TICK As String = "TickRun"
+Private Const DELAY_DEFAULT_MS As Long = 200
 
 Public Property Get EstadoCPU() As eCPUState
     EstadoCPU = mEstado
@@ -70,12 +76,15 @@ End Sub
 
 Public Sub DetenerCPU()
     mEstado = HALTED
+    CancelarRun
 End Sub
 
-' RESET: registros y flags a 0, fase FETCH, RUNNING. No borra la RAM.
+' RESET: registros y flags a 0, fase FETCH, RUNNING, log vacio. No borra la RAM.
 Public Sub DoReset()
+    CancelarRun
     ResetRegisters
     ResetFlags
+    ClearLog
     mEstado = RUNNING
     mFase = FETCH
     mPasoFetch = 1
@@ -88,14 +97,71 @@ Public Sub DoReset()
     mInstruccionActual.Sintaxis = ""
 End Sub
 
+' PAUSE: corta RUN; registros, RAM y fase se conservan. STEP sigue pudiendo avanzar.
 Public Sub DoPause()
     If mEstado = HALTED Then Exit Sub
     mEstado = PAUSED
+    CancelarRun
 End Sub
 
-Public Sub DoResume()
+' RUN: estado RUNNING y agenda el siguiente micro-paso tras el delay (sin bloquear Excel).
+Public Sub DoRun()
     If mEstado = HALTED Then Exit Sub
     mEstado = RUNNING
+    CancelarRun
+    AgendarSiguientePaso
+End Sub
+
+' Retardo en ms: celda rngDelay si existe; si no, el fallback (default 200).
+Public Property Get DelayMs() As Long
+    Dim v As Long
+    On Error Resume Next
+    Err.Clear
+    v = CLng(Range("rngDelay").Value)
+    If Err.Number <> 0 Or v < 0 Then
+        On Error GoTo 0
+        If mDelayMsFallback > 0 Then
+            DelayMs = mDelayMsFallback
+        Else
+            DelayMs = DELAY_DEFAULT_MS
+        End If
+    Else
+        On Error GoTo 0
+        DelayMs = v
+    End If
+End Property
+
+Public Sub SetDelayMs(ByVal ms As Long)
+    If ms < 0 Then ms = 0
+    mDelayMsFallback = ms
+End Sub
+
+' Disparo de Application.OnTime. Publico: Excel lo llama por nombre.
+Public Sub TickRun()
+    mRunAgendado = False
+    If mEstado <> RUNNING Then Exit Sub
+    DoStep
+    If mEstado = RUNNING Then
+        AgendarSiguientePaso
+    End If
+End Sub
+
+Private Sub AgendarSiguientePaso()
+    Dim segs As Double
+    segs = DelayMs / 1000#
+    If segs < 0.01 Then segs = 0.01
+    mProximaEjecucion = Now + segs / 86400#
+    Application.OnTime EarliestTime:=mProximaEjecucion, Procedure:=PROC_TICK, Schedule:=True
+    mRunAgendado = True
+End Sub
+
+Private Sub CancelarRun()
+    On Error Resume Next
+    If mRunAgendado Then
+        Application.OnTime EarliestTime:=mProximaEjecucion, Procedure:=PROC_TICK, Schedule:=False
+    End If
+    On Error GoTo 0
+    mRunAgendado = False
 End Sub
 
 ' Un clic de STEP: una sola micro-operacion. HALTED no avanza.
@@ -457,6 +523,113 @@ Public Sub PruebaDoStep()
 
     If fallos = 0 Then
         Debug.Print "DoStep sigue la traza manual de MOV AX,01h y HLT"
+    Else
+        Debug.Print "FALLOS", fallos
+    End If
+    Exit Sub
+Fallo:
+    Debug.Print "FALLO inesperado", Err.Number, Err.Description
+End Sub
+
+Public Sub PruebaRunPauseReset()
+    Dim fallos As Long
+    Dim i As Long
+    Dim axAntes As Byte
+    Dim pcAntes As Byte
+    Dim ram0 As Byte
+
+    On Error GoTo Fallo
+    fallos = 0
+
+    ' RESET no borra la RAM; si limpia registros, flags, fase y log.
+    ClearMem
+    WriteMem 0, OP_MOV_AX_IMM
+    WriteMem 1, &H5
+    WriteMem 2, OP_HLT
+    WriteMem &H80, &HAA
+    SetAX &H11
+    SetBX &H22
+    SetPC 7
+    UpdateFlags 0, 1
+    AppendLog "basura"
+    DoReset
+    If PC <> 0 Or AX <> 0 Or BX <> 0 Or IR <> 0 Or MAR <> 0 Or MDR <> 0 Then
+        Debug.Print "FALLO RESET registros", "PC=" & PC, "AX=" & AX
+        fallos = fallos + 1
+    ElseIf modFlags.ZF <> 0 Or modFlags.CF <> 0 Or modFlags.SF <> 0 Then
+        Debug.Print "FALLO RESET flags"
+        fallos = fallos + 1
+    ElseIf FaseActual <> FETCH Or EstadoCPU <> RUNNING Or FilasLog <> 0 Then
+        Debug.Print "FALLO RESET fase/estado/log", "fase=" & FaseActual, "filas=" & FilasLog
+        fallos = fallos + 1
+    ElseIf ReadMem(0) <> OP_MOV_AX_IMM Or ReadMem(&H80) <> &HAA Then
+        Debug.Print "FALLO RESET borro RAM"
+        fallos = fallos + 1
+    Else
+        Debug.Print "RESET", "ok", "CPU en cero, RAM intacta, log vacio"
+    End If
+
+    ' PAUSE conserva estado; STEP sigue avanzando
+    DoReset
+    DoStep
+    DoStep
+    axAntes = AX
+    pcAntes = PC
+    ram0 = ReadMem(0)
+    DoPause
+    If EstadoCPU <> PAUSED Then
+        Debug.Print "FALLO DoPause estado", EstadoCPU
+        fallos = fallos + 1
+    End If
+    DoStep
+    If EstadoCPU <> PAUSED Or AX <> axAntes Or ReadMem(0) <> ram0 Then
+        Debug.Print "FALLO PAUSE perdio estado", "AX=" & AX, "estado=" & EstadoCPU
+        fallos = fallos + 1
+    Else
+        Debug.Print "PAUSE", "ok", "conserva CPU/RAM y STEP avanza"
+    End If
+
+    ' RUN via TickRun (sin dejar OnTime pendiente): llega a HLT
+    DoReset
+    SetDelayMs 50
+    mEstado = RUNNING
+    For i = 1 To 80
+        If EstadoCPU = HALTED Then Exit For
+        TickRun
+        CancelarRun
+        If EstadoCPU = RUNNING Then
+            ' sigue el bucle de prueba
+        ElseIf EstadoCPU = PAUSED Then
+            Exit For
+        End If
+    Next i
+    If EstadoCPU <> HALTED Or AX <> 5 Then
+        Debug.Print "FALLO RUN hasta HLT", "estado=" & EstadoCPU, "AX=" & AX, "pasos=" & i
+        fallos = fallos + 1
+    Else
+        Debug.Print "RUN (TickRun)", "ok", "HALTED AX=5 en " & i & " ticks"
+    End If
+
+    ' Tras HLT, DoRun no reagenda
+    DoRun
+    If EstadoCPU <> HALTED Or mRunAgendado Then
+        Debug.Print "FALLO DoRun en HALTED", "estado=" & EstadoCPU, "agendado=" & mRunAgendado
+        fallos = fallos + 1
+    Else
+        Debug.Print "DoRun en HALTED", "ok", "no agenda"
+    End If
+
+    ' DelayMs siempre no negativo (rngDelay o fallback)
+    SetDelayMs 350
+    If DelayMs < 0 Then
+        Debug.Print "FALLO DelayMs", DelayMs
+        fallos = fallos + 1
+    Else
+        Debug.Print "DelayMs", "ok", DelayMs & " ms"
+    End If
+
+    If fallos = 0 Then
+        Debug.Print "RUN, PAUSE y RESET cumplen la consigna"
     Else
         Debug.Print "FALLOS", fallos
     End If
