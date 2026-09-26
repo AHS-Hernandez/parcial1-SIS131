@@ -2,9 +2,9 @@ Attribute VB_Name = "modExecution"
 Option Explicit
 
 ' Execute y Store de la instruccion actual.
-' MOV/LOAD no tocan banderas. ADD/SUB/INC/DEC/CMP pasan por modALU.
-' CMP actualiza flags y no escribe el registro.
-' En la ventana Inmediato: PruebaExecuteMovLoad, PruebaExecuteAritmetica
+' MOV/LOAD/saltos/HLT no tocan banderas. ADD/SUB/INC/DEC/CMP pasan por modALU.
+' CMP actualiza flags y no escribe el registro. HLT pone HALTED.
+' En la ventana Inmediato: PruebaExecuteMovLoad, PruebaExecuteAritmetica, PruebaExecuteSaltos
 
 Private mInfo As tInstruccion
 Private mOperando As Byte
@@ -83,8 +83,21 @@ Public Sub PasoExecute()
             mTemporal = AluCmp(BX, AX)
             mEscribeRegistro = False
 
+        Case OP_JMP
+            SetPC mOperando
+            mEscribeRegistro = False
+        Case OP_JZ
+            If modFlags.ZF = 1 Then SetPC mOperando
+            mEscribeRegistro = False
+        Case OP_JNZ
+            If modFlags.ZF = 0 Then SetPC mOperando
+            mEscribeRegistro = False
+        Case OP_HLT
+            DetenerCPU
+            mEscribeRegistro = False
+
         Case Else
-            ' STORE, saltos, logica: issues siguientes.
+            ' STORE y logica: issues siguientes.
     End Select
 End Sub
 
@@ -109,7 +122,7 @@ Public Sub PasoStore()
             SetBX mTemporal
 
         Case Else
-            ' STORE, saltos, logica: issues siguientes.
+            ' STORE y logica: issues siguientes.
     End Select
 End Sub
 
@@ -428,6 +441,137 @@ Public Sub PruebaExecuteAritmetica()
 
     If fallos = 0 Then
         Debug.Print "Execute conecta ADD/SUB/INC/DEC/CMP con la ALU"
+    Else
+        Debug.Print "FALLOS", fallos
+    End If
+    Exit Sub
+Fallo:
+    Debug.Print "FALLO inesperado", Err.Number, Err.Description
+End Sub
+
+Public Sub PruebaExecuteSaltos()
+    Dim fallos As Long
+    Dim z0 As Byte
+    Dim c0 As Byte
+    Dim s0 As Byte
+    Dim pc0 As Byte
+
+    On Error GoTo Fallo
+    fallos = 0
+
+    ' JMP dir: PC <- dir, banderas intactas
+    ClearMem
+    ResetRegisters
+    SetPC &H10
+    UpdateFlags 5, 1
+    z0 = modFlags.ZF: c0 = modFlags.CF: s0 = modFlags.SF
+    Preparar DecodeByte(OP_JMP), &H40
+    PasoExecute
+    PasoStore
+    If PC <> &H40 Or Not BanderasIguales(z0, c0, s0) Then
+        Debug.Print "FALLO JMP", "PC=" & PC
+        fallos = fallos + 1
+    Else
+        Debug.Print "JMP 40h", "ok", "PC=" & PC
+    End If
+
+    ' JZ tomado: ZF=1 -> PC <- dir
+    ClearMem
+    ResetRegisters
+    SetPC &H20
+    UpdateFlags 0, 0
+    z0 = modFlags.ZF: c0 = modFlags.CF: s0 = modFlags.SF
+    Preparar DecodeByte(OP_JZ), &H80
+    PasoExecute
+    PasoStore
+    If PC <> &H80 Or modFlags.ZF <> 1 Or Not BanderasIguales(z0, c0, s0) Then
+        Debug.Print "FALLO JZ tomado", "PC=" & PC, "ZF=" & modFlags.ZF
+        fallos = fallos + 1
+    Else
+        Debug.Print "JZ tomado (ZF=1)", "ok", "PC=" & PC
+    End If
+
+    ' JZ no tomado: ZF=0 -> PC se queda
+    ClearMem
+    ResetRegisters
+    SetPC &H22
+    pc0 = PC
+    UpdateFlags 1, 0
+    z0 = modFlags.ZF: c0 = modFlags.CF: s0 = modFlags.SF
+    Preparar DecodeByte(OP_JZ), &H90
+    PasoExecute
+    PasoStore
+    If PC <> pc0 Or Not BanderasIguales(z0, c0, s0) Then
+        Debug.Print "FALLO JZ no tomado", "PC=" & PC
+        fallos = fallos + 1
+    Else
+        Debug.Print "JZ no tomado (ZF=0)", "ok", "PC=" & PC
+    End If
+
+    ' JNZ tomado: ZF=0 -> PC <- dir
+    ClearMem
+    ResetRegisters
+    SetPC &H30
+    UpdateFlags 7, 0
+    z0 = modFlags.ZF: c0 = modFlags.CF: s0 = modFlags.SF
+    Preparar DecodeByte(OP_JNZ), &HA0
+    PasoExecute
+    PasoStore
+    If PC <> &HA0 Or Not BanderasIguales(z0, c0, s0) Then
+        Debug.Print "FALLO JNZ tomado", "PC=" & PC
+        fallos = fallos + 1
+    Else
+        Debug.Print "JNZ tomado (ZF=0)", "ok", "PC=" & PC
+    End If
+
+    ' JNZ no tomado: ZF=1 -> PC se queda
+    ClearMem
+    ResetRegisters
+    SetPC &H33
+    pc0 = PC
+    UpdateFlags 0, 1
+    z0 = modFlags.ZF: c0 = modFlags.CF: s0 = modFlags.SF
+    Preparar DecodeByte(OP_JNZ), &HB0
+    PasoExecute
+    PasoStore
+    If PC <> pc0 Or Not BanderasIguales(z0, c0, s0) Then
+        Debug.Print "FALLO JNZ no tomado", "PC=" & PC
+        fallos = fallos + 1
+    Else
+        Debug.Print "JNZ no tomado (ZF=1)", "ok", "PC=" & PC
+    End If
+
+    ' HLT: estado HALTED, banderas intactas, registros intactos
+    ClearMem
+    ResetRegisters
+    SetAX &H11
+    SetBX &H22
+    SetPC &H50
+    IniciarFetch
+    UpdateFlags 3, 1
+    z0 = modFlags.ZF: c0 = modFlags.CF: s0 = modFlags.SF
+    Preparar DecodeByte(OP_HLT), 0
+    PasoExecute
+    PasoStore
+    If EstadoCPU <> HALTED Or AX <> &H11 Or BX <> &H22 Or PC <> &H50 Or Not BanderasIguales(z0, c0, s0) Then
+        Debug.Print "FALLO HLT", "estado=" & EstadoCPU, "AX=" & AX
+        fallos = fallos + 1
+    Else
+        Debug.Print "HLT", "ok", "HALTED, registros y flags intactos"
+    End If
+
+    ' Tras HLT, Fetch no avanza
+    pc0 = PC
+    PasoFetch
+    If PC <> pc0 Or EstadoCPU <> HALTED Then
+        Debug.Print "FALLO HLT frena Fetch", "PC=" & PC
+        fallos = fallos + 1
+    Else
+        Debug.Print "HLT frena Fetch", "ok"
+    End If
+
+    If fallos = 0 Then
+        Debug.Print "Execute cubre JMP, JZ, JNZ y HLT"
     Else
         Debug.Print "FALLOS", fallos
     End If

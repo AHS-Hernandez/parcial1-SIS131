@@ -57,6 +57,11 @@ Public Sub IniciarFetch()
     mTieneOperando = False
 End Sub
 
+' Lo llama Execute al encontrar HLT (o un opcode invalido ya lo hace Decode).
+Public Sub DetenerCPU()
+    mEstado = HALTED
+End Sub
+
 ' Un solo micro-paso: 1 PC->MAR, 2 RAM->MDR, 3 MDR->IR, 4 PC+1.
 Public Sub PasoFetch()
     If mEstado = HALTED Then Exit Sub
