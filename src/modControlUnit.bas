@@ -1,9 +1,10 @@
 Attribute VB_Name = "modControlUnit"
 Option Explicit
 
-' Fetch y Decode. Un micro-paso por llamada.
-' En la ventana Inmediato: PruebaFetch y PruebaDecode
-' Traza Fetch: PC=00h y RAM(00h)=10h => MAR=00, MDR=10h, IR=10h, PC=01h
+' Maquina de estados: eCPUState + ePhase. DoStep = una micro-operacion.
+' La fase visible es la del micro que acaba de correr; la siguiente se arma al inicio del proximo STEP.
+' En la ventana Inmediato: PruebaFetch, PruebaDecode, PruebaDoStep
+' Traza manual: MOV AX,01h (10h 01h) luego HLT (FFh) — ANALISIS 6.4
 
 Public Enum eCPUState
     RUNNING = 0
@@ -25,6 +26,10 @@ Private mPasoFetch As Integer
 Private mInstruccionActual As tInstruccion
 Private mOperando As Byte
 Private mTieneOperando As Boolean
+Private mEsperandoOperando As Boolean
+Private mPasoGlobal As Long
+Private mHaySiguiente As Boolean
+Private mFaseSiguiente As ePhase
 
 Public Property Get EstadoCPU() As eCPUState
     EstadoCPU = mEstado
@@ -36,6 +41,10 @@ End Property
 
 Public Property Get NumeroDePaso() As Integer
     NumeroDePaso = mPasoFetch
+End Property
+
+Public Property Get PasoGlobal() As Long
+    PasoGlobal = mPasoGlobal
 End Property
 
 Public Property Get InstruccionActual() As tInstruccion
@@ -55,17 +64,116 @@ Public Sub IniciarFetch()
     mFase = FETCH
     mPasoFetch = 1
     mTieneOperando = False
+    mEsperandoOperando = False
+    mHaySiguiente = False
 End Sub
 
-' Lo llama Execute al encontrar HLT (o un opcode invalido ya lo hace Decode).
 Public Sub DetenerCPU()
     mEstado = HALTED
 End Sub
 
-' Un solo micro-paso: 1 PC->MAR, 2 RAM->MDR, 3 MDR->IR, 4 PC+1.
+' RESET: registros y flags a 0, fase FETCH, RUNNING. No borra la RAM.
+Public Sub DoReset()
+    ResetRegisters
+    ResetFlags
+    mEstado = RUNNING
+    mFase = FETCH
+    mPasoFetch = 1
+    mTieneOperando = False
+    mEsperandoOperando = False
+    mPasoGlobal = 0
+    mOperando = 0
+    mHaySiguiente = False
+    mInstruccionActual.Encontrada = False
+    mInstruccionActual.Sintaxis = ""
+End Sub
+
+Public Sub DoPause()
+    If mEstado = HALTED Then Exit Sub
+    mEstado = PAUSED
+End Sub
+
+Public Sub DoResume()
+    If mEstado = HALTED Then Exit Sub
+    mEstado = RUNNING
+End Sub
+
+' Un clic de STEP: una sola micro-operacion. HALTED no avanza.
+Public Sub DoStep()
+    Dim eraF4 As Boolean
+
+    If mEstado = HALTED Then Exit Sub
+    If mEstado = RESET Then Exit Sub
+
+    If mHaySiguiente Then
+        mHaySiguiente = False
+        mFase = mFaseSiguiente
+        If mFase = FETCH Then
+            mPasoFetch = 1
+            ' Si venimos de Decode pidiendo operando, mEsperandoOperando sigue True.
+            If Not mEsperandoOperando Then
+                mTieneOperando = False
+            End If
+        ElseIf mFase = EXECUTE Then
+            Preparar mInstruccionActual, mOperando
+        End If
+    End If
+
+    mPasoGlobal = mPasoGlobal + 1
+
+    Select Case mFase
+        Case FETCH
+            eraF4 = (mPasoFetch = 4)
+            PasoFetchInterno
+            If eraF4 Then
+                If mEsperandoOperando Then
+                    mOperando = IR
+                    mTieneOperando = True
+                    mEsperandoOperando = False
+                    ProgramarFase EXECUTE
+                Else
+                    ProgramarFase DECODE
+                End If
+            End If
+
+        Case DECODE
+            PasoDecode
+            If mEstado = HALTED Then Exit Sub
+            If mInstruccionActual.Bytes = 2 And Not mTieneOperando Then
+                mEsperandoOperando = True
+                ProgramarFase FETCH
+            Else
+                ProgramarFase EXECUTE
+            End If
+
+        Case EXECUTE
+            PasoExecute
+            If mEstado = HALTED Then Exit Sub
+            If EscribeRegistro Then
+                ProgramarFase STORE
+            Else
+                ProgramarFase FETCH
+            End If
+
+        Case STORE
+            PasoStore
+            ProgramarFase FETCH
+    End Select
+End Sub
+
+Private Sub ProgramarFase(ByVal f As ePhase)
+    mHaySiguiente = True
+    mFaseSiguiente = f
+End Sub
+
+' Un solo micro-paso de Fetch (API publica para pruebas unitarias de Fetch).
 Public Sub PasoFetch()
     If mEstado = HALTED Then Exit Sub
     mFase = FETCH
+    PasoFetchInterno
+End Sub
+
+Private Sub PasoFetchInterno()
     Select Case mPasoFetch
         Case 1: Fetch1_PCaMAR
         Case 2: Fetch2_RAMaMDR
@@ -95,7 +203,6 @@ Public Sub Fetch4_IncrementarPC()
     mPasoFetch = 1
 End Sub
 
-' Lee IR y traduce el opcode con la tabla ISA.
 Public Sub PasoDecode()
     Dim info As tInstruccion
 
@@ -115,12 +222,10 @@ Public Sub PasoDecode()
         mTieneOperando = False
         mOperando = 0
     Else
-        ' El segundo byte se trae con otro Fetch; Decode ya sabe el modo.
         mTieneOperando = False
     End If
 End Sub
 
-' Completa una instruccion de 2 bytes: Fetch del operando y lo guarda.
 Public Sub TraerOperando()
     If mEstado = HALTED Then Exit Sub
     If mInstruccionActual.Bytes <> 2 Then Exit Sub
@@ -198,7 +303,6 @@ Public Sub PruebaDecode()
     fallos = fallos + VerificarDecode(OP_HLT, "HLT", "NONE", 1)
     fallos = fallos + VerificarDecode(OP_NOT_AX, "NOT AX", "REG", 1)
 
-    ' Opcode desconocido: Decode debe dejar HALTED.
     ClearMem
     ResetRegisters
     mEstado = RUNNING
@@ -211,7 +315,6 @@ Public Sub PruebaDecode()
         Debug.Print "opcode 00h", "ok desconocido y HALTED"
     End If
 
-    ' Traza corta: Fetch de MOV AX,imm (10h 05h) y Decode.
     ClearMem
     ResetRegisters
     WriteMem 0, OP_MOV_AX_IMM
@@ -246,6 +349,142 @@ Public Sub PruebaDecode()
 Fallo:
     Debug.Print "FALLO inesperado", Err.Number, Err.Description
 End Sub
+
+' Traza manual ANALISIS 6.4: MOV AX,01h + HLT. Cada DoStep = un micro.
+Public Sub PruebaDoStep()
+    Dim fallos As Long
+
+    On Error GoTo Fallo
+    fallos = 0
+
+    ClearMem
+    WriteMem 0, OP_MOV_AX_IMM
+    WriteMem 1, &H1
+    WriteMem 2, OP_HLT
+    DoReset
+
+    Debug.Print "traza mano MOV AX,01h luego HLT"
+
+    DoStep
+    fallos = fallos + CheckPaso(1, FETCH, 0, 0, 0, 0, 0, "MAR<-PC")
+
+    DoStep
+    fallos = fallos + CheckPaso(2, FETCH, 0, 0, &H10, 0, 0, "MDR<-RAM")
+
+    DoStep
+    fallos = fallos + CheckPaso(3, FETCH, 0, 0, &H10, &H10, 0, "IR<-MDR")
+
+    DoStep
+    fallos = fallos + CheckPaso(4, FETCH, 1, 0, &H10, &H10, 0, "PC+1")
+
+    DoStep
+    If FaseActual <> DECODE Or InstruccionActual.Sintaxis <> "MOV AX, imm" Then
+        Debug.Print "FALLO paso5 DECODE", "fase=" & FaseActual, InstruccionActual.Sintaxis
+        fallos = fallos + 1
+    Else
+        Debug.Print "paso5 DECODE", "ok", "pide operando"
+    End If
+
+    DoStep
+    fallos = fallos + CheckPaso(6, FETCH, 1, 1, &H10, &H10, 0, "op MAR<-PC")
+    DoStep
+    fallos = fallos + CheckPaso(7, FETCH, 1, 1, &H1, &H10, 0, "op MDR<-RAM")
+    DoStep
+    fallos = fallos + CheckPaso(8, FETCH, 1, 1, &H1, &H1, 0, "op IR<-MDR")
+    DoStep
+    If PC <> 2 Or FaseActual <> FETCH Or OperandoActual <> 1 Then
+        Debug.Print "FALLO paso9 op PC+1", "PC=" & PC, "fase=" & FaseActual, "op=" & OperandoActual
+        fallos = fallos + 1
+    Else
+        Debug.Print "paso9 FETCH PC+1", "ok", "operando=1"
+    End If
+
+    DoStep
+    If AX <> 0 Or Temporal <> 1 Or FaseActual <> EXECUTE Then
+        Debug.Print "FALLO paso10 EXECUTE", "AX=" & AX, "temp=" & Temporal, "fase=" & FaseActual
+        fallos = fallos + 1
+    Else
+        Debug.Print "paso10 EXECUTE", "ok", "Temporal=1"
+    End If
+
+    DoStep
+    If AX <> 1 Or FaseActual <> STORE Then
+        Debug.Print "FALLO paso11 STORE", "AX=" & AX, "fase=" & FaseActual
+        fallos = fallos + 1
+    Else
+        Debug.Print "paso11 STORE", "ok", "AX=1"
+    End If
+
+    ' HLT: 4x Fetch + Decode + Execute
+    DoStep
+    DoStep
+    DoStep
+    DoStep
+    DoStep
+    If InstruccionActual.Sintaxis <> "HLT" Or FaseActual <> DECODE Then
+        Debug.Print "FALLO HLT DECODE", InstruccionActual.Sintaxis, "fase=" & FaseActual
+        fallos = fallos + 1
+    Else
+        Debug.Print "HLT DECODE", "ok"
+    End If
+    DoStep
+    If EstadoCPU <> HALTED Or AX <> 1 Or FaseActual <> EXECUTE Then
+        Debug.Print "FALLO HLT EXECUTE", "estado=" & EstadoCPU, "AX=" & AX, "fase=" & FaseActual
+        fallos = fallos + 1
+    Else
+        Debug.Print "HLT EXECUTE", "ok", "HALTED AX=1"
+    End If
+
+    DoStep
+    If EstadoCPU <> HALTED Then
+        Debug.Print "FALLO STEP en HALTED avanzo"
+        fallos = fallos + 1
+    Else
+        Debug.Print "STEP en HALTED", "ok", "no avanza"
+    End If
+
+    ClearMem
+    WriteMem 0, OP_HLT
+    DoReset
+    DoPause
+    DoStep
+    If EstadoCPU <> PAUSED Or FaseActual <> FETCH Or MAR <> 0 Then
+        Debug.Print "FALLO PAUSE+STEP", "estado=" & EstadoCPU, "fase=" & FaseActual
+        fallos = fallos + 1
+    Else
+        Debug.Print "PAUSE+STEP", "ok", "avanza y sigue PAUSED"
+    End If
+
+    If fallos = 0 Then
+        Debug.Print "DoStep sigue la traza manual de MOV AX,01h y HLT"
+    Else
+        Debug.Print "FALLOS", fallos
+    End If
+    Exit Sub
+Fallo:
+    Debug.Print "FALLO inesperado", Err.Number, Err.Description
+End Sub
+
+Private Function CheckPaso(ByVal n As Long, ByVal faseEsp As ePhase, _
+                           ByVal pcEsp As Long, ByVal marEsp As Long, _
+                           ByVal mdrEsp As Long, ByVal irEsp As Long, _
+                           ByVal axEsp As Long, ByVal nombre As String) As Long
+    If FaseActual <> faseEsp Or PC <> pcEsp Or MAR <> marEsp _
+       Or MDR <> mdrEsp Or IR <> irEsp Or AX <> axEsp Then
+        Debug.Print "FALLO paso" & n, nombre, _
+            "fase " & faseEsp & "/" & FaseActual, _
+            "PC " & pcEsp & "/" & PC, _
+            "MAR " & marEsp & "/" & MAR, _
+            "MDR " & mdrEsp & "/" & MDR, _
+            "IR " & irEsp & "/" & IR, _
+            "AX " & axEsp & "/" & AX
+        CheckPaso = 1
+    Else
+        Debug.Print "paso" & n, nombre, "ok", _
+            "PC=" & PC, "MAR=" & MAR, "MDR=" & MDR, "IR=" & IR, "AX=" & AX
+        CheckPaso = 0
+    End If
+End Function
 
 Private Function VerificarDecode(ByVal opcode As Long, ByVal sintaxis As String, ByVal modo As String, ByVal bytes As Integer) As Long
     ClearMem

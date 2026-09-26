@@ -21,6 +21,11 @@ Public Property Get InstruccionLista() As Boolean
     InstruccionLista = mPreparada
 End Property
 
+' True si PasoStore debe escribir registro o RAM (False en CMP, saltos, HLT).
+Public Property Get EscribeRegistro() As Boolean
+    EscribeRegistro = mEscribeRegistro And mPreparada
+End Property
+
 Public Sub Preparar(ByRef info As tInstruccion, ByVal operando As Byte)
     mInfo = info
     mOperando = operando And &HFF
