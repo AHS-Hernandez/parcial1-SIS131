@@ -33,6 +33,7 @@ Private mRunAgendado As Boolean
 Private mProximaEjecucion As Date
 Private mDelayMsFallback As Long
 Private mUltimoErrorLoad As String
+Private mUltimaMicroOp As String
 Private Const PROC_TICK As String = "TickRun"
 Private Const DELAY_DEFAULT_MS As Long = 200
 Private Const CODIGO_MAX As Long = &H7F
@@ -70,6 +71,10 @@ Public Property Get UltimoErrorLoad() As String
     UltimoErrorLoad = mUltimoErrorLoad
 End Property
 
+Public Property Get UltimaMicroOp() As String
+    UltimaMicroOp = mUltimaMicroOp
+End Property
+
 Public Sub IniciarFetch()
     mEstado = RUNNING
     mFase = FETCH
@@ -100,6 +105,8 @@ Public Sub DoReset()
     mHaySiguiente = False
     mInstruccionActual.Encontrada = False
     mInstruccionActual.Sintaxis = ""
+    mUltimaMicroOp = "RESET"
+    RefreshUI
 End Sub
 
 ' PAUSE: corta RUN; registros, RAM y fase se conservan. STEP sigue pudiendo avanzar.
@@ -107,6 +114,8 @@ Public Sub DoPause()
     If mEstado = HALTED Then Exit Sub
     mEstado = PAUSED
     CancelarRun
+    mUltimaMicroOp = "PAUSE"
+    RefreshUI
 End Sub
 
 ' RUN: estado RUNNING y agenda el siguiente micro-paso tras el delay (sin bloquear Excel).
@@ -114,6 +123,8 @@ Public Sub DoRun()
     If mEstado = HALTED Then Exit Sub
     mEstado = RUNNING
     CancelarRun
+    mUltimaMicroOp = "RUN"
+    RefreshUI
     AgendarSiguientePaso
 End Sub
 
@@ -203,6 +214,8 @@ Siguiente:
     mInstruccionActual.Encontrada = False
     mInstruccionActual.Sintaxis = ""
     SetPC 0
+    mUltimaMicroOp = "LOAD PROGRAM"
+    RefreshUI
 End Sub
 
 ' Traduce una linea de ensamblador a opcode (+ operando si Bytes=2).
@@ -465,7 +478,7 @@ End Sub
 
 ' Un clic de STEP: una sola micro-operacion. HALTED no avanza.
 Public Sub DoStep()
-    Dim eraF4 As Boolean
+    Dim pasoAntes As Integer
 
     If mEstado = HALTED Then Exit Sub
     If mEstado = RESET Then Exit Sub
@@ -488,9 +501,15 @@ Public Sub DoStep()
 
     Select Case mFase
         Case FETCH
-            eraF4 = (mPasoFetch = 4)
+            pasoAntes = mPasoFetch
             PasoFetchInterno
-            If eraF4 Then
+            Select Case pasoAntes
+                Case 1: mUltimaMicroOp = "F1: PC -> MAR"
+                Case 2: mUltimaMicroOp = "F2: RAM[MAR] -> MDR"
+                Case 3: mUltimaMicroOp = "F3: MDR -> IR"
+                Case 4: mUltimaMicroOp = "F4: PC <- PC+1"
+            End Select
+            If pasoAntes = 4 Then
                 If mEsperandoOperando Then
                     mOperando = IR
                     mTieneOperando = True
@@ -503,17 +522,28 @@ Public Sub DoStep()
 
         Case DECODE
             PasoDecode
-            If mEstado = HALTED Then Exit Sub
+            If mEstado = HALTED Then
+                mUltimaMicroOp = "DECODE: unknown opcode -> HALT"
+                RefreshUI
+                Exit Sub
+            End If
             If mInstruccionActual.Bytes = 2 And Not mTieneOperando Then
+                mUltimaMicroOp = "DECODE: " & mInstruccionActual.Sintaxis & " -> fetch operand"
                 mEsperandoOperando = True
                 ProgramarFase FETCH
             Else
+                mUltimaMicroOp = "DECODE: IR -> " & mInstruccionActual.Sintaxis
                 ProgramarFase EXECUTE
             End If
 
         Case EXECUTE
             PasoExecute
-            If mEstado = HALTED Then Exit Sub
+            If mEstado = HALTED Then
+                mUltimaMicroOp = "EXECUTE: HLT -> HALT"
+                RefreshUI
+                Exit Sub
+            End If
+            mUltimaMicroOp = "EXECUTE: " & mInstruccionActual.Sintaxis
             If EscribeRegistro Then
                 ProgramarFase STORE
             Else
@@ -522,8 +552,10 @@ Public Sub DoStep()
 
         Case STORE
             PasoStore
+            mUltimaMicroOp = "STORE: write-back"
             ProgramarFase FETCH
     End Select
+    RefreshUI
 End Sub
 
 Private Sub ProgramarFase(ByVal f As ePhase)
