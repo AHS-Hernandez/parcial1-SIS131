@@ -2,9 +2,10 @@ Attribute VB_Name = "modExecution"
 Option Explicit
 
 ' Execute y Store de la instruccion actual.
-' MOV/LOAD/saltos/HLT no tocan banderas. ADD/SUB/INC/DEC/CMP pasan por modALU.
-' CMP actualiza flags y no escribe el registro. HLT pone HALTED.
-' En la ventana Inmediato: PruebaExecuteMovLoad, PruebaExecuteAritmetica, PruebaExecuteSaltos
+' MOV/LOAD/STORE/saltos/HLT no tocan banderas. ADD/SUB/INC/DEC/CMP pasan por modALU.
+' LOAD/STORE pasan por MAR y MDR. STORE escribe con WriteMem(MAR, MDR).
+' En la ventana Inmediato: PruebaExecuteMovLoad, PruebaExecuteAritmetica,
+' PruebaExecuteSaltos, PruebaExecuteStore
 
 Private mInfo As tInstruccion
 Private mOperando As Byte
@@ -42,6 +43,12 @@ Public Sub PasoExecute()
         Case OP_LOAD_AX, OP_LOAD_BX
             SetMAR mOperando
             SetMDR ReadMem(MAR)
+        Case OP_STORE_AX
+            SetMAR mOperando
+            SetMDR AX
+        Case OP_STORE_BX
+            SetMAR mOperando
+            SetMDR BX
 
         Case OP_ADD_AX_IMM
             mTemporal = AluAdd(AX, mOperando)
@@ -97,11 +104,11 @@ Public Sub PasoExecute()
             mEscribeRegistro = False
 
         Case Else
-            ' STORE y logica: issues siguientes.
+            ' Logica AND/OR/XOR/NOT: issue siguiente.
     End Select
 End Sub
 
-' Micro-operacion Store: escribe el registro destino (salvo CMP).
+' Micro-operacion Store: escribe registro o RAM (salvo CMP/saltos/HLT).
 Public Sub PasoStore()
     If Not mPreparada Then Exit Sub
     If Not mEscribeRegistro Then Exit Sub
@@ -115,6 +122,8 @@ Public Sub PasoStore()
             SetAX MDR
         Case OP_LOAD_BX
             SetBX MDR
+        Case OP_STORE_AX, OP_STORE_BX
+            WriteMem MAR, MDR
 
         Case OP_ADD_AX_IMM, OP_ADD_AX_BX, OP_SUB_AX_IMM, OP_SUB_AX_BX, OP_INC_AX, OP_DEC_AX
             SetAX mTemporal
@@ -122,7 +131,7 @@ Public Sub PasoStore()
             SetBX mTemporal
 
         Case Else
-            ' STORE y logica: issues siguientes.
+            ' Logica AND/OR/XOR/NOT: issue siguiente.
     End Select
 End Sub
 
@@ -572,6 +581,99 @@ Public Sub PruebaExecuteSaltos()
 
     If fallos = 0 Then
         Debug.Print "Execute cubre JMP, JZ, JNZ y HLT"
+    Else
+        Debug.Print "FALLOS", fallos
+    End If
+    Exit Sub
+Fallo:
+    Debug.Print "FALLO inesperado", Err.Number, Err.Description
+End Sub
+
+' Traza manual (mano): STORE [81h], AX con AX=2Ah
+' EXECUTE: MAR<-81h, MDR<-AX(2Ah)
+' STORE:   WriteMem(MAR,MDR) => RAM(81h)=2Ah
+' Flags y AX no cambian.
+Public Sub PruebaExecuteStore()
+    Dim fallos As Long
+    Dim z0 As Byte
+    Dim c0 As Byte
+    Dim s0 As Byte
+
+    On Error GoTo Fallo
+    fallos = 0
+
+    ' STORE [81h], AX
+    ClearMem
+    ResetRegisters
+    SetAX &H2A
+    WriteMem &H81, 0
+    UpdateFlags 7, 1
+    z0 = modFlags.ZF: c0 = modFlags.CF: s0 = modFlags.SF
+    Debug.Print "traza mano STORE [81h], AX  AX=2Ah"
+    Preparar DecodeByte(OP_STORE_AX), &H81
+    PasoExecute
+    Debug.Print "EXECUTE", "MAR=" & Hex$(MAR) & "h", "MDR=" & Hex$(MDR) & "h", "AX=" & Hex$(AX) & "h"
+    If MAR <> &H81 Or MDR <> &H2A Or AX <> &H2A Then
+        Debug.Print "FALLO STORE AX Execute", "MAR=" & MAR, "MDR=" & MDR
+        fallos = fallos + 1
+    End If
+    PasoStore
+    Debug.Print "STORE", "RAM(81h)=" & Hex$(ReadMem(&H81)) & "h"
+    If ReadMem(&H81) <> &H2A Or AX <> &H2A Or Not BanderasIguales(z0, c0, s0) Then
+        Debug.Print "FALLO STORE AX WriteMem", "RAM=" & ReadMem(&H81)
+        fallos = fallos + 1
+    Else
+        Debug.Print "STORE [81h], AX", "ok", "RAM(81h)=2Ah flags intactos"
+    End If
+
+    ' STORE [FFh], BX
+    ClearMem
+    ResetRegisters
+    SetBX &H9C
+    WriteMem &HFF, 0
+    UpdateFlags 0, 0
+    z0 = modFlags.ZF: c0 = modFlags.CF: s0 = modFlags.SF
+    Preparar DecodeByte(OP_STORE_BX), &HFF
+    PasoExecute
+    If MAR <> &HFF Or MDR <> &H9C Then
+        Debug.Print "FALLO STORE BX Execute", "MAR=" & MAR, "MDR=" & MDR
+        fallos = fallos + 1
+    End If
+    PasoStore
+    If ReadMem(&HFF) <> &H9C Or BX <> &H9C Or Not BanderasIguales(z0, c0, s0) Then
+        Debug.Print "FALLO STORE BX WriteMem", "RAM=" & ReadMem(&HFF)
+        fallos = fallos + 1
+    Else
+        Debug.Print "STORE [FFh], BX", "ok", "RAM(FFh)=9Ch"
+    End If
+
+    ' Ciclo corto: Fetch+Decode+STORE [80h], AX (AX=55h)
+    ClearMem
+    ResetRegisters
+    SetAX &H55
+    WriteMem 0, OP_STORE_AX
+    WriteMem 1, &H80
+    WriteMem &H80, 0
+    SetPC 0
+    IniciarFetch
+    PasoFetch
+    PasoFetch
+    PasoFetch
+    PasoFetch
+    PasoDecode
+    TraerOperando
+    Preparar InstruccionActual, OperandoActual
+    PasoExecute
+    PasoStore
+    If ReadMem(&H80) <> &H55 Or MAR <> &H80 Or MDR <> &H55 Then
+        Debug.Print "FALLO traza Fetch+Decode+STORE", "RAM(80h)=" & ReadMem(&H80)
+        fallos = fallos + 1
+    Else
+        Debug.Print "traza STORE [80h], AX", "ok", "RAM(80h)=55h via MAR/MDR"
+    End If
+
+    If fallos = 0 Then
+        Debug.Print "STORE escribe por MAR/MDR con WriteMem"
     Else
         Debug.Print "FALLOS", fallos
     End If
