@@ -2,10 +2,8 @@ Attribute VB_Name = "modControlUnit"
 Option Explicit
 
 ' Maquina de estados: eCPUState + ePhase. DoStep = una micro-operacion.
-' DoRun agenda el siguiente DoStep con Application.OnTime (rngDelay ms).
-' DoPause cancela el disparo sin perder registros. DoReset no borra la RAM.
-' En la ventana Inmediato: PruebaFetch, PruebaDecode, PruebaDoStep, PruebaRunPauseReset
-' Traza manual: MOV AX,01h (10h 01h) luego HLT (FFh) - ANALISIS 6.4
+' DoRun/DoPause/DoReset y DoLoad (ensambla PROGRAM con modISA a 00h-7Fh).
+' En la ventana Inmediato: PruebaDoStep, PruebaRunPauseReset, PruebaDoLoad
 
 Public Enum eCPUState
     RUNNING = 0
@@ -34,8 +32,11 @@ Private mFaseSiguiente As ePhase
 Private mRunAgendado As Boolean
 Private mProximaEjecucion As Date
 Private mDelayMsFallback As Long
+Private mUltimoErrorLoad As String
 Private Const PROC_TICK As String = "TickRun"
 Private Const DELAY_DEFAULT_MS As Long = 200
+Private Const CODIGO_MAX As Long = &H7F
+Private Const ERR_LOAD As Long = vbObjectError + 5601
 
 Public Property Get EstadoCPU() As eCPUState
     EstadoCPU = mEstado
@@ -63,6 +64,10 @@ End Property
 
 Public Property Get TieneOperando() As Boolean
     TieneOperando = mTieneOperando
+End Property
+
+Public Property Get UltimoErrorLoad() As String
+    UltimoErrorLoad = mUltimoErrorLoad
 End Property
 
 Public Sub IniciarFetch()
@@ -111,6 +116,295 @@ Public Sub DoRun()
     CancelarRun
     AgendarSiguientePaso
 End Sub
+
+' LOAD PROGRAM: lee rngProgram, ensambla con modISA, escribe en 00h, PC=00h.
+' Zona de codigo 00h-7Fh. Ante error no modifica la RAM.
+Public Sub DoLoad()
+    Dim lineas() As String
+    On Error GoTo Fallo
+    mUltimoErrorLoad = ""
+    lineas = LeerFilasProgram()
+    CargarPrograma lineas
+    Exit Sub
+Fallo:
+    mUltimoErrorLoad = Err.Description
+    Err.Raise Err.Number, "DoLoad", mUltimoErrorLoad
+End Sub
+
+' Ensambla un arreglo de lineas (una instruccion por elemento). Usado por DoLoad y pruebas.
+Public Sub CargarPrograma(ByRef lineas() As String)
+    Dim i As Long
+    Dim n As Long
+    Dim opcode As Long
+    Dim operando As Byte
+    Dim nbytes As Integer
+    Dim pos As Long
+    Dim bytes() As Byte
+    Dim fila As Long
+    Dim texto As String
+
+    mUltimoErrorLoad = ""
+    CancelarRun
+
+    If (UBound(lineas) - LBound(lineas) + 1) <= 0 Then
+        Err.Raise ERR_LOAD, "CargarPrograma", "PROGRAM vacio"
+    End If
+
+    ReDim bytes(0 To CODIGO_MAX)
+    pos = 0
+    fila = 0
+
+    For i = LBound(lineas) To UBound(lineas)
+        texto = Trim$(CStr(lineas(i)))
+        fila = fila + 1
+        If Len(texto) = 0 Then GoTo Siguiente
+        If Left$(texto, 1) = "'" Or Left$(texto, 1) = ";" Then GoTo Siguiente
+
+        If Not EnsamblarLinea(texto, opcode, operando, nbytes) Then
+            Err.Raise ERR_LOAD, "CargarPrograma", mUltimoErrorLoad & " (fila " & fila & ")"
+        End If
+
+        If pos + nbytes - 1 > CODIGO_MAX Then
+            Err.Raise ERR_LOAD, "CargarPrograma", "El programa supera la zona de codigo 00h-7Fh (fila " & fila & ")"
+        End If
+
+        bytes(pos) = CByte(opcode And &HFF)
+        pos = pos + 1
+        If nbytes = 2 Then
+            bytes(pos) = operando
+            pos = pos + 1
+        End If
+Siguiente:
+    Next i
+
+    If pos = 0 Then
+        Err.Raise ERR_LOAD, "CargarPrograma", "PROGRAM sin instrucciones"
+    End If
+
+    n = pos - 1
+    ReDim Preserve bytes(0 To n)
+
+    ' Solo limpia codigo; datos 80h-FFh se conservan.
+    For i = 0 To CODIGO_MAX
+        WriteMem i, 0
+    Next i
+    LoadBlock 0, bytes
+
+    ResetRegisters
+    ResetFlags
+    mEstado = RUNNING
+    mFase = FETCH
+    mPasoFetch = 1
+    mTieneOperando = False
+    mEsperandoOperando = False
+    mHaySiguiente = False
+    mPasoGlobal = 0
+    mOperando = 0
+    mInstruccionActual.Encontrada = False
+    mInstruccionActual.Sintaxis = ""
+    SetPC 0
+End Sub
+
+' Traduce una linea de ensamblador a opcode (+ operando si Bytes=2).
+Public Function EnsamblarLinea(ByVal linea As String, ByRef opcode As Long, ByRef operando As Byte, ByRef numBytes As Integer) As Boolean
+    Dim plantilla As String
+    Dim tieneOp As Boolean
+    Dim info As tInstruccion
+
+    On Error GoTo Fallo
+    mUltimoErrorLoad = ""
+    plantilla = PrepararPlantilla(linea, operando, tieneOp)
+    If Len(plantilla) = 0 Then
+        mUltimoErrorLoad = "Linea vacia"
+        EnsamblarLinea = False
+        Exit Function
+    End If
+
+    opcode = MnemonicToOpcode(plantilla)
+    info = DecodeByte(opcode)
+    If Not info.Encontrada Then
+        mUltimoErrorLoad = "Opcode no encontrado para: " & linea
+        EnsamblarLinea = False
+        Exit Function
+    End If
+
+    numBytes = info.Bytes
+    If numBytes = 2 And Not tieneOp Then
+        mUltimoErrorLoad = "Falta operando (imm/dir) en: " & linea
+        EnsamblarLinea = False
+        Exit Function
+    End If
+    If numBytes = 1 Then
+        operando = 0
+    End If
+
+    EnsamblarLinea = True
+    Exit Function
+Fallo:
+    mUltimoErrorLoad = Err.Description
+    EnsamblarLinea = False
+End Function
+
+Private Function PrepararPlantilla(ByVal linea As String, ByRef operando As Byte, ByRef tieneOp As Boolean) As String
+    Dim s As String
+    Dim p As Long
+    Dim q As Long
+    Dim tok As String
+    Dim izq As String
+    Dim der As String
+    Dim partes() As String
+    Dim ok As Boolean
+    Dim v As Long
+
+    s = CompactarEspacios(UCase$(Trim$(linea)))
+    tieneOp = False
+    operando = 0
+
+    p = InStr(s, "'")
+    If p > 0 Then s = Trim$(Left$(s, p - 1))
+    p = InStr(s, ";")
+    If p > 0 Then s = Trim$(Left$(s, p - 1))
+    If Len(s) = 0 Then
+        PrepararPlantilla = ""
+        Exit Function
+    End If
+
+    ' LOAD/STORE con [dir]
+    p = InStr(s, "[")
+    If p > 0 Then
+        q = InStr(p, s, "]")
+        If q = 0 Then Err.Raise ERR_LOAD, "Ensamblar", "Falta ] en: " & linea
+        tok = Mid$(s, p + 1, q - p - 1)
+        v = ParseByteToken(tok, ok)
+        If Not ok Then Err.Raise ERR_LOAD, "Ensamblar", "Operando invalido '" & tok & "' en: " & linea
+        operando = CByte(v)
+        tieneOp = True
+        PrepararPlantilla = Left$(s, p) & "DIR" & Mid$(s, q)
+        Exit Function
+    End If
+
+    p = InStr(s, ",")
+    If p > 0 Then
+        izq = Trim$(Left$(s, p - 1))
+        der = Trim$(Mid$(s, p + 1))
+        If der = "AX" Or der = "BX" Then
+            PrepararPlantilla = s
+        Else
+            v = ParseByteToken(der, ok)
+            If Not ok Then Err.Raise ERR_LOAD, "Ensamblar", "Operando invalido '" & der & "' en: " & linea
+            operando = CByte(v)
+            tieneOp = True
+            PrepararPlantilla = izq & ", IMM"
+        End If
+        Exit Function
+    End If
+
+    partes = Split(s, " ")
+    If partes(0) = "JMP" Or partes(0) = "JZ" Or partes(0) = "JNZ" Then
+        If UBound(partes) < 1 Then
+            Err.Raise ERR_LOAD, "Ensamblar", "Falta direccion en: " & linea
+        End If
+        v = ParseByteToken(partes(1), ok)
+        If Not ok Then Err.Raise ERR_LOAD, "Ensamblar", "Direccion invalida '" & partes(1) & "' en: " & linea
+        operando = CByte(v)
+        tieneOp = True
+        PrepararPlantilla = partes(0) & " DIR"
+        Exit Function
+    End If
+
+    PrepararPlantilla = s
+End Function
+
+Private Function ParseByteToken(ByVal token As String, ByRef ok As Boolean) As Long
+    Dim t As String
+    Dim esHex As Boolean
+
+    ok = False
+    t = UCase$(Trim$(token))
+    If Len(t) = 0 Then Exit Function
+
+    esHex = False
+    If Left$(t, 2) = "&H" Then
+        t = Mid$(t, 3)
+        esHex = True
+    ElseIf Right$(t, 1) = "H" Then
+        t = Left$(t, Len(t) - 1)
+        esHex = True
+    End If
+
+    On Error GoTo Mal
+    If esHex Then
+        ParseByteToken = CLng("&H" & t)
+    Else
+        ParseByteToken = CLng(t)
+    End If
+    If ParseByteToken < 0 Or ParseByteToken > 255 Then Exit Function
+    ok = True
+    Exit Function
+Mal:
+    ok = False
+End Function
+
+Private Function CompactarEspacios(ByVal texto As String) As String
+    Dim i As Long
+    Dim salida As String
+    Dim anterior As String
+    anterior = " "
+    For i = 1 To Len(texto)
+        If Mid$(texto, i, 1) = " " Then
+            If anterior <> " " Then salida = salida & " "
+            anterior = " "
+        Else
+            salida = salida & Mid$(texto, i, 1)
+            anterior = Mid$(texto, i, 1)
+        End If
+    Next i
+    CompactarEspacios = Trim$(salida)
+End Function
+
+Private Function LeerFilasProgram() As String()
+    Dim rng As Range
+    Dim c As Range
+    Dim n As Long
+    Dim i As Long
+    Dim out() As String
+    Dim col As Range
+
+    On Error GoTo Fallo
+    Set rng = Range("rngProgram")
+    If rng Is Nothing Then Err.Raise ERR_LOAD, "DoLoad", "No existe el rango rngProgram"
+
+    If rng.Columns.Count >= 1 Then
+        Set col = rng.Columns(1)
+    Else
+        Set col = rng
+    End If
+
+    n = 0
+    For Each c In col.Cells
+        If Len(Trim$(CStr(c.Value & ""))) > 0 Then n = n + 1
+    Next c
+
+    If n = 0 Then
+        ReDim out(0 To 0)
+        out(0) = ""
+        LeerFilasProgram = out
+        Exit Function
+    End If
+
+    ReDim out(0 To n - 1)
+    i = 0
+    For Each c In col.Cells
+        If Len(Trim$(CStr(c.Value & ""))) > 0 Then
+            out(i) = CStr(c.Value)
+            i = i + 1
+        End If
+    Next c
+    LeerFilasProgram = out
+    Exit Function
+Fallo:
+    Err.Raise ERR_LOAD, "DoLoad", "No se pudo leer rngProgram: " & Err.Description
+End Function
 
 ' Retardo en ms: celda rngDelay si existe; si no, el fallback (default 200).
 Public Property Get DelayMs() As Long
@@ -630,6 +924,122 @@ Public Sub PruebaRunPauseReset()
 
     If fallos = 0 Then
         Debug.Print "RUN, PAUSE y RESET cumplen la consigna"
+    Else
+        Debug.Print "FALLOS", fallos
+    End If
+    Exit Sub
+Fallo:
+    Debug.Print "FALLO inesperado", Err.Number, Err.Description
+End Sub
+
+Public Sub PruebaDoLoad()
+    Dim fallos As Long
+    Dim lineas() As String
+    Dim op As Long
+    Dim imm As Byte
+    Dim nb As Integer
+
+    On Error GoTo Fallo
+    fallos = 0
+
+    ' Ensamblar linea a linea
+    If Not EnsamblarLinea("MOV AX, 05h", op, imm, nb) Or op <> OP_MOV_AX_IMM Or imm <> 5 Or nb <> 2 Then
+        Debug.Print "FALLO ensamblar MOV AX,05h", op, imm, nb
+        fallos = fallos + 1
+    Else
+        Debug.Print "ensamblar MOV AX,05h", "ok", "10h 05h"
+    End If
+
+    If Not EnsamblarLinea("LOAD AX, [80h]", op, imm, nb) Or op <> OP_LOAD_AX Or imm <> &H80 Or nb <> 2 Then
+        Debug.Print "FALLO ensamblar LOAD", op, imm
+        fallos = fallos + 1
+    Else
+        Debug.Print "ensamblar LOAD AX,[80h]", "ok"
+    End If
+
+    If Not EnsamblarLinea("STORE [81h], BX", op, imm, nb) Or op <> OP_STORE_BX Or imm <> &H81 Then
+        Debug.Print "FALLO ensamblar STORE", op, imm
+        fallos = fallos + 1
+    Else
+        Debug.Print "ensamblar STORE [81h],BX", "ok"
+    End If
+
+    If Not EnsamblarLinea("JMP 10h", op, imm, nb) Or op <> OP_JMP Or imm <> &H10 Then
+        Debug.Print "FALLO ensamblar JMP", op, imm
+        fallos = fallos + 1
+    Else
+        Debug.Print "ensamblar JMP 10h", "ok"
+    End If
+
+    If Not EnsamblarLinea("HLT", op, imm, nb) Or op <> OP_HLT Or nb <> 1 Then
+        Debug.Print "FALLO ensamblar HLT", op, nb
+        fallos = fallos + 1
+    Else
+        Debug.Print "ensamblar HLT", "ok"
+    End If
+
+    ' Mnemonico invalido
+    If EnsamblarLinea("NOP", op, imm, nb) Then
+        Debug.Print "FALLO NOP debia fallar"
+        fallos = fallos + 1
+    Else
+        Debug.Print "NOP invalido", "ok", UltimoErrorLoad
+    End If
+
+    ' Operando invalido
+    If EnsamblarLinea("MOV AX, ZZh", op, imm, nb) Then
+        Debug.Print "FALLO operando ZZh debia fallar"
+        fallos = fallos + 1
+    Else
+        Debug.Print "operando invalido", "ok", UltimoErrorLoad
+    End If
+
+    ' Cargar programa completo; datos en 80h se conservan
+    ClearMem
+    WriteMem &H80, &HAA
+    ReDim lineas(0 To 4)
+    lineas(0) = "MOV AX, 05h"
+    lineas(1) = "MOV BX, AX"
+    lineas(2) = "STORE [81h], AX"
+    lineas(3) = "' comentario"
+    lineas(4) = "HLT"
+    CargarPrograma lineas
+
+    If ReadMem(0) <> OP_MOV_AX_IMM Or ReadMem(1) <> 5 Then
+        Debug.Print "FALLO RAM MOV", ReadMem(0), ReadMem(1)
+        fallos = fallos + 1
+    ElseIf ReadMem(2) <> OP_MOV_BX_AX Then
+        Debug.Print "FALLO RAM MOV BX,AX", ReadMem(2)
+        fallos = fallos + 1
+    ElseIf ReadMem(3) <> OP_STORE_AX Or ReadMem(4) <> &H81 Then
+        Debug.Print "FALLO RAM STORE", ReadMem(3), ReadMem(4)
+        fallos = fallos + 1
+    ElseIf ReadMem(5) <> OP_HLT Then
+        Debug.Print "FALLO RAM HLT", ReadMem(5)
+        fallos = fallos + 1
+    ElseIf ReadMem(&H80) <> &HAA Then
+        Debug.Print "FALLO borro datos 80h"
+        fallos = fallos + 1
+    ElseIf PC <> 0 Or EstadoCPU <> RUNNING Or FaseActual <> FETCH Then
+        Debug.Print "FALLO PC/estado tras load", "PC=" & PC
+        fallos = fallos + 1
+    Else
+        Debug.Print "CargarPrograma", "ok", "bytes en 00h, PC=0, datos 80h intactos"
+    End If
+
+    ' Tras load, DoStep trae el opcode MOV a IR
+    DoStep
+    DoStep
+    DoStep
+    If IR <> OP_MOV_AX_IMM Then
+        Debug.Print "FALLO Fetch tras LOAD", "IR=" & IR
+        fallos = fallos + 1
+    Else
+        Debug.Print "Fetch tras LOAD", "ok", "IR=10h"
+    End If
+
+    If fallos = 0 Then
+        Debug.Print "LOAD PROGRAM ensambla mnemonicos a la RAM"
     Else
         Debug.Print "FALLOS", fallos
     End If
