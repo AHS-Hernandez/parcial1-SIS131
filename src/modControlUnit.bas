@@ -458,6 +458,11 @@ Private Sub CancelarRun()
     mRunAgendado = False
 End Sub
 
+' Para pruebas y UI: cancela el OnTime de RUN sin cambiar el estado de la CPU.
+Public Sub DetenerRun()
+    CancelarRun
+End Sub
+
 ' Un clic de STEP: una sola micro-operacion. HALTED no avanza.
 Public Sub DoStep()
     Dim eraF4 As Boolean
