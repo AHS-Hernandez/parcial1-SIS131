@@ -1,14 +1,16 @@
 Attribute VB_Name = "modExecution"
 Option Explicit
 
-' Execute y Store de la instruccion actual. MOV y LOAD en este parcial (issue 15).
-' LOAD pasa siempre por MAR y MDR. MOV no toca las banderas.
-' En la ventana Inmediato: PruebaExecuteMovLoad
+' Execute y Store de la instruccion actual.
+' MOV/LOAD no tocan banderas. ADD/SUB/INC/DEC/CMP pasan por modALU.
+' CMP actualiza flags y no escribe el registro.
+' En la ventana Inmediato: PruebaExecuteMovLoad, PruebaExecuteAritmetica
 
 Private mInfo As tInstruccion
 Private mOperando As Byte
 Private mTemporal As Byte
 Private mPreparada As Boolean
+Private mEscribeRegistro As Boolean
 
 Public Property Get Temporal() As Byte
     Temporal = mTemporal
@@ -23,9 +25,10 @@ Public Sub Preparar(ByRef info As tInstruccion, ByVal operando As Byte)
     mOperando = operando And &HFF
     mTemporal = 0
     mPreparada = info.Encontrada
+    mEscribeRegistro = True
 End Sub
 
-' Micro-operacion Execute: temporal o MAR/MDR segun la familia.
+' Micro-operacion Execute: temporal, MAR/MDR o ALU segun la familia.
 Public Sub PasoExecute()
     If Not mPreparada Then Exit Sub
 
@@ -39,14 +42,56 @@ Public Sub PasoExecute()
         Case OP_LOAD_AX, OP_LOAD_BX
             SetMAR mOperando
             SetMDR ReadMem(MAR)
+
+        Case OP_ADD_AX_IMM
+            mTemporal = AluAdd(AX, mOperando)
+        Case OP_ADD_AX_BX
+            mTemporal = AluAdd(AX, BX)
+        Case OP_ADD_BX_IMM
+            mTemporal = AluAdd(BX, mOperando)
+        Case OP_ADD_BX_AX
+            mTemporal = AluAdd(BX, AX)
+
+        Case OP_SUB_AX_IMM
+            mTemporal = AluSub(AX, mOperando)
+        Case OP_SUB_AX_BX
+            mTemporal = AluSub(AX, BX)
+        Case OP_SUB_BX_IMM
+            mTemporal = AluSub(BX, mOperando)
+        Case OP_SUB_BX_AX
+            mTemporal = AluSub(BX, AX)
+
+        Case OP_INC_AX
+            mTemporal = AluInc(AX)
+        Case OP_INC_BX
+            mTemporal = AluInc(BX)
+        Case OP_DEC_AX
+            mTemporal = AluDec(AX)
+        Case OP_DEC_BX
+            mTemporal = AluDec(BX)
+
+        Case OP_CMP_AX_IMM
+            mTemporal = AluCmp(AX, mOperando)
+            mEscribeRegistro = False
+        Case OP_CMP_AX_BX
+            mTemporal = AluCmp(AX, BX)
+            mEscribeRegistro = False
+        Case OP_CMP_BX_IMM
+            mTemporal = AluCmp(BX, mOperando)
+            mEscribeRegistro = False
+        Case OP_CMP_BX_AX
+            mTemporal = AluCmp(BX, AX)
+            mEscribeRegistro = False
+
         Case Else
-            ' Otras familias: issues siguientes.
+            ' STORE, saltos, logica: issues siguientes.
     End Select
 End Sub
 
-' Micro-operacion Store: escribe el registro destino.
+' Micro-operacion Store: escribe el registro destino (salvo CMP).
 Public Sub PasoStore()
     If Not mPreparada Then Exit Sub
+    If Not mEscribeRegistro Then Exit Sub
 
     Select Case mInfo.Opcode
         Case OP_MOV_AX_IMM, OP_MOV_AX_BX
@@ -57,8 +102,14 @@ Public Sub PasoStore()
             SetAX MDR
         Case OP_LOAD_BX
             SetBX MDR
+
+        Case OP_ADD_AX_IMM, OP_ADD_AX_BX, OP_SUB_AX_IMM, OP_SUB_AX_BX, OP_INC_AX, OP_DEC_AX
+            SetAX mTemporal
+        Case OP_ADD_BX_IMM, OP_ADD_BX_AX, OP_SUB_BX_IMM, OP_SUB_BX_AX, OP_INC_BX, OP_DEC_BX
+            SetBX mTemporal
+
         Case Else
-            ' Otras familias: issues siguientes.
+            ' STORE, saltos, logica: issues siguientes.
     End Select
 End Sub
 
@@ -71,7 +122,6 @@ Public Sub PruebaExecuteMovLoad()
     On Error GoTo Fallo
     fallos = 0
 
-    ' MOV AX, imm
     ClearMem
     ResetRegisters
     UpdateFlags 0, 1
@@ -90,7 +140,6 @@ Public Sub PruebaExecuteMovLoad()
         Debug.Print "MOV AX, 2Ah", "ok", "AX=" & AX
     End If
 
-    ' MOV BX, imm
     ClearMem
     ResetRegisters
     UpdateFlags &HFF, 0
@@ -105,7 +154,6 @@ Public Sub PruebaExecuteMovLoad()
         Debug.Print "MOV BX, 07h", "ok", "BX=" & BX
     End If
 
-    ' MOV AX, BX
     ClearMem
     ResetRegisters
     SetBX &H55
@@ -122,7 +170,6 @@ Public Sub PruebaExecuteMovLoad()
         Debug.Print "MOV AX, BX", "ok", "AX=" & AX
     End If
 
-    ' MOV BX, AX
     ClearMem
     ResetRegisters
     SetAX &H11
@@ -139,7 +186,6 @@ Public Sub PruebaExecuteMovLoad()
         Debug.Print "MOV BX, AX", "ok", "BX=" & BX
     End If
 
-    ' LOAD AX, [dir] ? debe pasar por MAR y MDR
     ClearMem
     ResetRegisters
     WriteMem &H80, &H3C
@@ -159,7 +205,6 @@ Public Sub PruebaExecuteMovLoad()
         Debug.Print "LOAD AX, [80h]", "ok", "AX=" & AX, "MAR=" & MAR, "MDR=" & MDR
     End If
 
-    ' LOAD BX, [dir]
     ClearMem
     ResetRegisters
     WriteMem &HFF, &H9A
@@ -179,7 +224,6 @@ Public Sub PruebaExecuteMovLoad()
         Debug.Print "LOAD BX, [FFh]", "ok", "BX=" & BX, "MAR=" & MAR, "MDR=" & MDR
     End If
 
-    ' Traza corta: Decode + Execute/Store de MOV AX,imm via ControlUnit
     ClearMem
     ResetRegisters
     WriteMem 0, OP_MOV_AX_IMM
@@ -204,6 +248,186 @@ Public Sub PruebaExecuteMovLoad()
 
     If fallos = 0 Then
         Debug.Print "Execute cubre MOV y LOAD sin tocar banderas"
+    Else
+        Debug.Print "FALLOS", fallos
+    End If
+    Exit Sub
+Fallo:
+    Debug.Print "FALLO inesperado", Err.Number, Err.Description
+End Sub
+
+Public Sub PruebaExecuteAritmetica()
+    Dim fallos As Long
+    Dim ax0 As Byte
+    Dim bx0 As Byte
+
+    On Error GoTo Fallo
+    fallos = 0
+
+    ' ADD AX, imm: 02h+03h = 05h, flags limpios
+    ClearMem
+    ResetRegisters
+    SetAX 2
+    Preparar DecodeByte(OP_ADD_AX_IMM), 3
+    PasoExecute
+    PasoStore
+    If AX <> 5 Or modFlags.ZF <> 0 Or modFlags.CF <> 0 Or modFlags.SF <> 0 Then
+        Debug.Print "FALLO ADD AX,imm", "AX=" & AX, "ZF=" & modFlags.ZF
+        fallos = fallos + 1
+    Else
+        Debug.Print "ADD AX, 03h", "ok", "AX=" & AX
+    End If
+
+    ' ADD AX, BX con acarreo: FFh+01h
+    ClearMem
+    ResetRegisters
+    SetAX &HFF
+    SetBX 1
+    Preparar DecodeByte(OP_ADD_AX_BX), 0
+    PasoExecute
+    PasoStore
+    If AX <> 0 Or BX <> 1 Or modFlags.ZF <> 1 Or modFlags.CF <> 1 Then
+        Debug.Print "FALLO ADD AX,BX acarreo", "AX=" & AX, "CF=" & modFlags.CF
+        fallos = fallos + 1
+    Else
+        Debug.Print "ADD AX, BX (FFh+1)", "ok", "AX=0 CF=1 ZF=1"
+    End If
+
+    ' ADD BX, imm
+    ClearMem
+    ResetRegisters
+    SetBX 10
+    Preparar DecodeByte(OP_ADD_BX_IMM), 5
+    PasoExecute
+    PasoStore
+    If BX <> 15 Then
+        Debug.Print "FALLO ADD BX,imm", "BX=" & BX
+        fallos = fallos + 1
+    Else
+        Debug.Print "ADD BX, 05h", "ok", "BX=" & BX
+    End If
+
+    ' ADD BX, AX
+    ClearMem
+    ResetRegisters
+    SetAX 3
+    SetBX 4
+    Preparar DecodeByte(OP_ADD_BX_AX), 0
+    PasoExecute
+    PasoStore
+    If BX <> 7 Or AX <> 3 Then
+        Debug.Print "FALLO ADD BX,AX", "BX=" & BX
+        fallos = fallos + 1
+    Else
+        Debug.Print "ADD BX, AX", "ok", "BX=" & BX
+    End If
+
+    ' SUB AX, imm
+    ClearMem
+    ResetRegisters
+    SetAX 5
+    Preparar DecodeByte(OP_SUB_AX_IMM), 3
+    PasoExecute
+    PasoStore
+    If AX <> 2 Or modFlags.CF <> 0 Then
+        Debug.Print "FALLO SUB AX,imm", "AX=" & AX
+        fallos = fallos + 1
+    Else
+        Debug.Print "SUB AX, 03h", "ok", "AX=" & AX
+    End If
+
+    ' SUB BX, AX con prestamo: 00h-01h
+    ClearMem
+    ResetRegisters
+    SetBX 0
+    SetAX 1
+    Preparar DecodeByte(OP_SUB_BX_AX), 0
+    PasoExecute
+    PasoStore
+    If BX <> &HFF Or AX <> 1 Or modFlags.CF <> 1 Or modFlags.SF <> 1 Then
+        Debug.Print "FALLO SUB BX,AX prestamo", "BX=" & BX, "CF=" & modFlags.CF
+        fallos = fallos + 1
+    Else
+        Debug.Print "SUB BX, AX (0-1)", "ok", "BX=FFh CF=1 SF=1"
+    End If
+
+    ' INC AX / DEC BX
+    ClearMem
+    ResetRegisters
+    SetAX &HFF
+    Preparar DecodeByte(OP_INC_AX), 0
+    PasoExecute
+    PasoStore
+    If AX <> 0 Or modFlags.ZF <> 1 Or modFlags.CF <> 1 Then
+        Debug.Print "FALLO INC AX", "AX=" & AX
+        fallos = fallos + 1
+    Else
+        Debug.Print "INC AX (FFh)", "ok", "AX=0 CF=1"
+    End If
+
+    ClearMem
+    ResetRegisters
+    SetBX 1
+    Preparar DecodeByte(OP_DEC_BX), 0
+    PasoExecute
+    PasoStore
+    If BX <> 0 Or modFlags.ZF <> 1 Or modFlags.CF <> 0 Then
+        Debug.Print "FALLO DEC BX", "BX=" & BX
+        fallos = fallos + 1
+    Else
+        Debug.Print "DEC BX (01h)", "ok", "BX=0 ZF=1"
+    End If
+
+    ' CMP AX, BX: iguales -> ZF=1, AX y BX intactos
+    ClearMem
+    ResetRegisters
+    SetAX 5
+    SetBX 5
+    ax0 = AX
+    bx0 = BX
+    Preparar DecodeByte(OP_CMP_AX_BX), 0
+    PasoExecute
+    PasoStore
+    If AX <> ax0 Or BX <> bx0 Or modFlags.ZF <> 1 Or modFlags.CF <> 0 Then
+        Debug.Print "FALLO CMP AX,BX iguales", "AX=" & AX, "ZF=" & modFlags.ZF
+        fallos = fallos + 1
+    Else
+        Debug.Print "CMP AX, BX (iguales)", "ok", "ZF=1 registros intactos"
+    End If
+
+    ' CMP AX, imm: AX < imm -> CF=1, AX intacto
+    ClearMem
+    ResetRegisters
+    SetAX 3
+    ax0 = AX
+    Preparar DecodeByte(OP_CMP_AX_IMM), 5
+    PasoExecute
+    PasoStore
+    If AX <> ax0 Or modFlags.CF <> 1 Or modFlags.ZF <> 0 Then
+        Debug.Print "FALLO CMP AX,imm", "AX=" & AX, "CF=" & modFlags.CF
+        fallos = fallos + 1
+    Else
+        Debug.Print "CMP AX, 05h (3<5)", "ok", "CF=1 AX intacto"
+    End If
+
+    ' CMP BX, AX
+    ClearMem
+    ResetRegisters
+    SetBX 8
+    SetAX 8
+    bx0 = BX
+    Preparar DecodeByte(OP_CMP_BX_AX), 0
+    PasoExecute
+    PasoStore
+    If BX <> bx0 Or AX <> 8 Or modFlags.ZF <> 1 Then
+        Debug.Print "FALLO CMP BX,AX", "BX=" & BX
+        fallos = fallos + 1
+    Else
+        Debug.Print "CMP BX, AX", "ok", "ZF=1 BX intacto"
+    End If
+
+    If fallos = 0 Then
+        Debug.Print "Execute conecta ADD/SUB/INC/DEC/CMP con la ALU"
     Else
         Debug.Print "FALLOS", fallos
     End If
