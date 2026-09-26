@@ -2,7 +2,8 @@ Attribute VB_Name = "modPruebas"
 Option Explicit
 
 ' Prueba aislada de las 12 familias ISA + programa corto en STEP y RUN hasta HLT.
-' En la ventana Inmediato: PruebaISACompleta
+' Programa demo (multiplicacion): PruebaProgramaDemo ? docs/PROGRAMA_DEMO.md
+' En la ventana Inmediato: PruebaISACompleta, PruebaProgramaDemo
 ' Notas: docs/PRUEBAS.md
 
 Public Sub PruebaISACompleta()
@@ -60,7 +61,7 @@ Public Sub PruebaISACompleta()
         Debug.Print "STEP hasta HLT", "ok", "AX=5 RAM(80h)=5 HALTED"
     End If
 
-    ' RUN (TickRun) hasta HLT — mismo programa
+    ' RUN (TickRun) hasta HLT ? mismo programa
     ClearMem
     WriteMem &H80, 0
     CargarPrograma lineas
@@ -305,4 +306,99 @@ Private Sub CorrerHastaHltRun(ByVal maxPasos As Long)
         TickRun
         DetenerRun
     Next i
+End Sub
+
+' Multiplicacion por sumas: N en 80h, M en 81h, producto en 82h (docs/PROGRAMA_DEMO.md).
+Public Sub PruebaProgramaDemo()
+    Dim fallos As Long
+    Dim lineas() As String
+    Dim i As Long
+    Dim esperado As Variant
+    Dim maxRun As Long
+
+    On Error GoTo Fallo
+    fallos = 0
+
+    ReDim lineas(0 To 11)
+    lineas(0) = "MOV AX, 00h"
+    lineas(1) = "LOAD BX, [80h]"
+    lineas(2) = "CMP BX, 00h"
+    lineas(3) = "JZ 12h"
+    lineas(4) = "LOAD BX, [81h]"
+    lineas(5) = "ADD AX, BX"
+    lineas(6) = "LOAD BX, [80h]"
+    lineas(7) = "DEC BX"
+    lineas(8) = "STORE [80h], BX"
+    lineas(9) = "JMP 02h"
+    lineas(10) = "STORE [82h], AX"
+    lineas(11) = "HLT"
+
+    ' Bytes a mano (traduccion de PROGRAMA_DEMO.md)
+    esperado = Array( _
+        &H10, &H0, _
+        &H21, &H80, _
+        &H72, &H0, _
+        &H90, &H12, _
+        &H21, &H81, _
+        &H41, _
+        &H21, &H80, _
+        &H63, _
+        &H31, &H80, _
+        &H80, &H2, _
+        &H30, &H82, _
+        &HFF)
+
+    ClearMem
+    WriteMem &H80, 3
+    WriteMem &H81, 4
+    WriteMem &H82, 0
+    CargarPrograma lineas
+
+    For i = 0 To UBound(esperado)
+        If ReadMem(i) <> CByte(esperado(i)) Then
+            Debug.Print "FALLO byte", Hex$(i) & "h", "esp " & Hex$(esperado(i)), "obt " & Hex$(ReadMem(i))
+            fallos = fallos + 1
+        End If
+    Next i
+    If fallos = 0 Then
+        Debug.Print "bytes demo", "ok", "00h-14h coinciden con la traduccion a mano"
+    End If
+
+    If ReadMem(&H80) <> 3 Or ReadMem(&H81) <> 4 Then
+        Debug.Print "FALLO datos 80h/81h tras load"
+        fallos = fallos + 1
+    End If
+
+    ' 3*4 = 12: bucle + JZ + STORE + HLT (margen de micros)
+    maxRun = 500
+    CorrerHastaHltStep maxRun
+    If EstadoCPU <> HALTED Or AX <> 12 Or ReadMem(&H82) <> 12 Then
+        Debug.Print "FALLO demo STEP", "estado=" & EstadoCPU, "AX=" & AX, "RAM82=" & ReadMem(&H82)
+        fallos = fallos + 1
+    Else
+        Debug.Print "demo STEP", "ok", "3*4=0Ch en AX y [82h], HALTED"
+    End If
+
+    ' N=0: producto 0 por JZ inmediato
+    ClearMem
+    WriteMem &H80, 0
+    WriteMem &H81, 5
+    WriteMem &H82, &HFF
+    CargarPrograma lineas
+    CorrerHastaHltStep maxRun
+    If EstadoCPU <> HALTED Or AX <> 0 Or ReadMem(&H82) <> 0 Then
+        Debug.Print "FALLO demo N=0", "AX=" & AX, "RAM82=" & ReadMem(&H82)
+        fallos = fallos + 1
+    Else
+        Debug.Print "demo N=0", "ok", "JZ a FIN, producto 0"
+    End If
+
+    If fallos = 0 Then
+        Debug.Print "Programa demostrativo (multiplicacion) verificado"
+    Else
+        Debug.Print "FALLOS", fallos
+    End If
+    Exit Sub
+Fallo:
+    Debug.Print "FALLO inesperado", Err.Number, Err.Description
 End Sub
