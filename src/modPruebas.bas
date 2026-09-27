@@ -3,7 +3,9 @@ Option Explicit
 
 ' Prueba aislada de las 12 familias ISA + programa corto en STEP y RUN hasta HLT.
 ' Programa demo (multiplicacion): PruebaProgramaDemo, PruebaDemoStepRun
-' En la ventana Inmediato: PruebaISACompleta, PruebaProgramaDemo, PruebaDemoStepRun
+' Casos limite: PruebaCasosLimite
+' En la ventana Inmediato: PruebaISACompleta, PruebaProgramaDemo, PruebaDemoStepRun,
+'   PruebaCasosLimite
 ' Notas: docs/PRUEBAS.md, docs/PROGRAMA_DEMO.md
 
 Public Sub PruebaISACompleta()
@@ -592,3 +594,165 @@ Private Function LogsIguales(ByRef a() As String, ByRef b() As String) As Boolea
     Next i
     LogsIguales = True
 End Function
+
+' Issue 28: bordes 00h/FFh, valor 0/255, ZF/CF/SF, segmentacion MEMORY.
+Public Sub PruebaCasosLimite()
+    Dim fallos As Long
+    Dim cCod As Long
+    Dim cDat As Long
+
+    On Error GoTo Fallo
+    fallos = 0
+    Debug.Print "=== Casos limite memoria / flags / zonas ==="
+
+    ' --- Memoria: direccion 00h y FFh, valor 0 y 255 ---
+    ClearMem
+    WriteMem 0, 0
+    If ReadMem(0) <> 0 Then
+        Debug.Print "FALLO mem 00h=0", "obt=" & ReadMem(0)
+        fallos = fallos + 1
+    Else
+        Debug.Print "mem 00h <- 00h", "ok", "esp=0 obt=0"
+    End If
+
+    WriteMem 0, 255
+    If ReadMem(0) <> 255 Then
+        Debug.Print "FALLO mem 00h=FFh", "obt=" & ReadMem(0)
+        fallos = fallos + 1
+    Else
+        Debug.Print "mem 00h <- FFh", "ok", "esp=255 obt=255"
+    End If
+
+    WriteMem 255, 0
+    If ReadMem(255) <> 0 Then
+        Debug.Print "FALLO mem FFh=0", "obt=" & ReadMem(255)
+        fallos = fallos + 1
+    Else
+        Debug.Print "mem FFh <- 00h", "ok", "esp=0 obt=0"
+    End If
+
+    WriteMem 255, 255
+    If ReadMem(255) <> 255 Then
+        Debug.Print "FALLO mem FFh=FFh", "obt=" & ReadMem(255)
+        fallos = fallos + 1
+    Else
+        Debug.Print "mem FFh <- FFh", "ok", "esp=255 obt=255"
+    End If
+
+    ' --- Flags: ZF ---
+    ClearMem
+    ResetRegisters
+    ResetFlags
+    SetAX 1
+    Preparar DecodeByte(OP_SUB_AX_IMM), 1
+    PasoExecute
+    PasoStore
+    If AX <> 0 Or modFlags.ZF <> 1 Or modFlags.SF <> 0 Or modFlags.CF <> 0 Then
+        Debug.Print "FALLO ZF", "AX=" & AX, "ZF=" & modFlags.ZF, "SF=" & modFlags.SF, "CF=" & modFlags.CF
+        fallos = fallos + 1
+    Else
+        Debug.Print "ZF (1-1=0)", "ok", "esp ZF=1 SF=0 CF=0 obt iguales"
+    End If
+
+    ' --- Flags: CF acarreo FFh+1 ---
+    ClearMem
+    ResetRegisters
+    SetAX &HFF
+    Preparar DecodeByte(OP_ADD_AX_IMM), 1
+    PasoExecute
+    PasoStore
+    If AX <> 0 Or modFlags.CF <> 1 Or modFlags.ZF <> 1 Or modFlags.SF <> 0 Then
+        Debug.Print "FALLO CF suma", "AX=" & AX, "CF=" & modFlags.CF, "ZF=" & modFlags.ZF
+        fallos = fallos + 1
+    Else
+        Debug.Print "CF (FFh+1)", "ok", "esp AX=0 CF=1 ZF=1 SF=0 obt iguales"
+    End If
+
+    ' --- Flags: SF negativo 00h-01h ---
+    ClearMem
+    ResetRegisters
+    SetAX 0
+    Preparar DecodeByte(OP_SUB_AX_IMM), 1
+    PasoExecute
+    PasoStore
+    If AX <> &HFF Or modFlags.SF <> 1 Or modFlags.CF <> 1 Or modFlags.ZF <> 0 Then
+        Debug.Print "FALLO SF", "AX=" & AX, "SF=" & modFlags.SF, "CF=" & modFlags.CF
+        fallos = fallos + 1
+    Else
+        Debug.Print "SF (00h-01h)", "ok", "esp AX=FFh SF=1 CF=1 ZF=0 obt iguales"
+    End If
+
+    ' --- INC tope / DEC cero (bordes ALU) ---
+    ClearMem
+    ResetRegisters
+    SetAX &HFF
+    Preparar DecodeByte(OP_INC_AX), 0
+    PasoExecute
+    PasoStore
+    If AX <> 0 Or modFlags.CF <> 1 Or modFlags.ZF <> 1 Then
+        Debug.Print "FALLO INC FFh", "AX=" & AX, "CF=" & modFlags.CF
+        fallos = fallos + 1
+    Else
+        Debug.Print "INC FFh", "ok", "esp AX=0 CF=1 ZF=1 obt iguales"
+    End If
+
+    ClearMem
+    ResetRegisters
+    SetAX 0
+    Preparar DecodeByte(OP_DEC_AX), 0
+    PasoExecute
+    PasoStore
+    If AX <> &HFF Or modFlags.CF <> 1 Or modFlags.SF <> 1 Then
+        Debug.Print "FALLO DEC 00h", "AX=" & AX, "CF=" & modFlags.CF, "SF=" & modFlags.SF
+        fallos = fallos + 1
+    Else
+        Debug.Print "DEC 00h", "ok", "esp AX=FFh CF=1 SF=1 obt iguales"
+    End If
+
+    ' --- Sin acarreo 01h+01h ---
+    ClearMem
+    ResetRegisters
+    SetAX 1
+    Preparar DecodeByte(OP_ADD_AX_IMM), 1
+    PasoExecute
+    PasoStore
+    If AX <> 2 Or modFlags.CF <> 0 Or modFlags.ZF <> 0 Or modFlags.SF <> 0 Then
+        Debug.Print "FALLO sin acarreo", "AX=" & AX, "CF=" & modFlags.CF
+        fallos = fallos + 1
+    Else
+        Debug.Print "ADD 01h+01h", "ok", "esp AX=2 CF=0 ZF=0 SF=0 obt iguales"
+    End If
+
+    ' --- Segmentacion visual MEMORY (codigo vs datos) ---
+    On Error GoTo SinUI
+    ClearMem
+    WriteMem 0, &H10
+    WriteMem &H80, 3
+    DoReset
+    VistaMemHEX
+    RefreshUI
+    cCod = Range("rngRAM").Cells(1, 1).Interior.Color
+    cDat = Range("rngRAM").Cells(9, 1).Interior.Color
+    If cCod = cDat Then
+        Debug.Print "FALLO zonas mismo color", "cod=" & cCod, "dat=" & cDat
+        fallos = fallos + 1
+    Else
+        Debug.Print "zonas MEMORY", "ok", "codigo<>datos (colores distintos)"
+    End If
+    GoTo TrasUI
+SinUI:
+    Debug.Print "FALLO UI zonas", Err.Number, Err.Description
+    fallos = fallos + 1
+    On Error GoTo Fallo
+TrasUI:
+    On Error GoTo Fallo
+
+    If fallos = 0 Then
+        Debug.Print "Casos limite 00h/FFh, ZF/CF/SF y segmentacion OK"
+    Else
+        Debug.Print "FALLOS", fallos
+    End If
+    Exit Sub
+Fallo:
+    Debug.Print "FALLO PruebaCasosLimite", Err.Number, Err.Description
+End Sub
