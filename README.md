@@ -14,6 +14,44 @@ El propósito del simulador es modelar y visualizar en tiempo real el funcionami
 
 ---
 
+## 🚀 Guía de Instalación y Manual de Usuario
+
+### 1. Requisitos e Instalación
+1. **Requisitos de Software**: Microsoft Excel 2016 o superior (Windows / macOS) con soporte para macros VBA.
+2. **Abrir el Ejecutable**: Descargar y abrir el archivo [`SimuladorCPU.xlsm`](SimuladorCPU.xlsm) ubicado en la raíz del repositorio.
+3. **Habilitar Macros**: Al abrir el libro, hacer clic en la barra amarilla superior en **"Habilitar contenido"** o **"Habilitar macros"** para permitir la ejecución de los controles VBA.
+
+---
+
+### 2. Manual de Uso de los Controles (Hoja CPU)
+
+| Botón / Control | Función y Comportamiento |
+|---|---|
+| **`LOAD PROGRAM`** | Lee el código fuente ensamblador escrito en la pestaña `PROGRAM`, lo ensambla a bytes hexadecimales y lo carga en el Segmento de Código de la RAM (`00h`–`7Fh`), reiniciando el `PC` a `00h`. |
+| **`STEP`** | Avanza **una micro-operación** a la vez. Resalta con color el componente activo (fase, camino de datos o celda RAM) y actualiza los paneles de registros y banderas. |
+| **`RUN`** | Inicia la ejecución secuencial automática continua a través del bucle FSM sin congelar la interfaz de Excel. |
+| **`PAUSE`** | Detiene la ejecución automática de `RUN` en el sub-paso actual, permitiendo continuar manualmente en modo `STEP`. |
+| **`RESET`** | Restablece los registros (`PC`, `IR`, `MAR`, `MDR`, `AX`, `BX`) y banderas (`ZF`, `CF`, `SF`) a cero, vuelve la fase a `FETCH` y limpia el log. **Mantiene intacta la memoria RAM** para permitir reejecuciones. |
+| **Retardo (`rngDelay`)** | Permite ajustar la velocidad de ejecución del modo `RUN` en milisegundos (por ejemplo, `50 ms` o `200 ms`) para observar la animación gráfica. |
+
+---
+
+### 3. Descripción de los Paneles e Interfaz Gráfica
+
+1. **Panel CPU (`Hoja CPU`)**:
+   - **Camino de Datos**: Flecha dinámica que señala la transferencia activa entre `PC → MAR`, `MAR → RAM`, `RAM → MDR` y `MDR → IR`.
+   - **Panel de Registros**: Muestra los valores actuales en formato Hexadecimal (`00h`–`FFh`).
+   - **Panel de Banderas**: Indicadores `1` / `0` de `ZF`, `CF` y `SF`.
+   - **Fase y Micro-op Activa**: Muestra el nombre exacto del paso del reloj (ej. `FETCH: MAR ← PC`).
+2. **Matriz de Memoria (`Hoja MEMORY`)**:
+   - Grilla 16×16 que representa los 256 bytes de la RAM.
+   - Resalta en **naranja** la celda actualmente leída/escrita y en **verde** la dirección apuntada por `MAR`.
+   - Permite alternar la visualización entre formatos **HEX**, **BIN** y **DEC/Mnemónico**.
+3. **Log de Micro-operaciones (`Hoja LOG`)**:
+   - Registra una fila por cada sub-paso con marca de tiempo, fase, micro-operación, registros y banderas.
+
+---
+
 ## 🏛️ Arquitectura del Sistema
 
 El sistema se compone de **6 hojas de Excel** (interfaz de usuario) y **9 módulos VBA** desacoplados en tres capas funcionales: presentación, control/operación y modelo de datos.
@@ -163,7 +201,7 @@ sequenceDiagram
   Note over PC, IR: 1. FASE FETCH (Búsqueda de instrucción/byte)
   PC->>MAR: MAR ← PC
   MAR->>RAM: Colocar dirección en bus
-  RAM->>MDR: MDR ← RAM[RAM]
+  RAM->>MDR: MDR ← RAM[MAR]
   MDR->>IR: IR ← MDR
   PC->>PC: PC ← (PC + 1) mod 256
 
