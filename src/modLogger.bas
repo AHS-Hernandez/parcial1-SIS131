@@ -64,7 +64,7 @@ Public Sub LogPaso()
     fila = FILA_PRIMERA + mFilas - 1
 
     faseTxt = NombreFaseLog(FaseActual)
-    micro = UltimaMicroOp
+    micro = modControlUnit.UltimaMicroOp
     If Len(micro) = 0 Then micro = "-"
 
     ws.Cells(fila, COL_PASO).Value = mFilas
@@ -192,6 +192,10 @@ Private Sub AsegurarEncabezado(ByVal ws As Worksheet)
         ws.Cells(FILA_HEADER, COL_SF).Value = "SF"
         ws.Cells(FILA_HEADER, COL_TEXTO).Value = "Texto"
     End If
+    ' Cabecera legible para la defensa (no toca filas de datos)
+    ws.Range(ws.Cells(FILA_HEADER, 1), ws.Cells(FILA_HEADER, COL_TEXTO)).Font.Bold = True
+    ws.Range(ws.Cells(FILA_HEADER, 1), ws.Cells(FILA_HEADER, COL_TEXTO)).Interior.Color = RGB(46, 94, 139)
+    ws.Range(ws.Cells(FILA_HEADER, 1), ws.Cells(FILA_HEADER, COL_TEXTO)).Font.Color = RGB(255, 255, 255)
     On Error GoTo 0
 End Sub
 
