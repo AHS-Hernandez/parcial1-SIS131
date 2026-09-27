@@ -33,6 +33,63 @@ El sistema se compone de **6 hojas de Excel** (interfaz de usuario) y **9 módul
 
 ---
 
+## 🗺️ Mapa de Memoria, Registros, Banderas e ISA Completa
+
+### 1. Mapa de Memoria Principal (RAM)
+- **Rango Total**: `00h` a `FFh` (256 bytes contiguos).
+- **Segmentación Lógica**:
+  - `00h` – `7Fh` (128 bytes): **Segmento de Código** (zona de carga de instrucciones).
+  - `80h` – `EFh` (112 bytes): **Segmento de Datos** (variables, arreglos y almacenamiento).
+  - `F0h` – `FFh` (16 bytes): **Zona de Control y Pila**.
+
+### 2. Registros de la CPU (8 bits)
+- **`PC` (Program Counter)**: Puntero de 8 bits que almacena la dirección de memoria de la siguiente instrucción o byte por procesar.
+- **`IR` (Instruction Register)**: Registro de 8 bits que contiene el código de operación (Opcode) en ejecución.
+- **`MAR` (Memory Address Register)**: Registro de dirección conectado a las líneas de bus para especificar la celda de RAM activa.
+- **`MDR` / `MBR` (Memory Data Register)**: Registro búfer que almacena el byte recién leído o por escribir en la RAM.
+- **`AX` (Acumulador)**: Registro de propósito general de 8 bits para cómputo aritmético-lógico principal.
+- **`BX` (Registro Base)**: Registro de propósito general de 8 bits para operaciones auxiliares y operandos secundarios.
+
+### 3. Registro de Estado (Banderas / Flags)
+- **`ZF` (Zero Flag)**: Se activa en `1` si el resultado de la última operación de la ALU fue igual a cero (`00h`).
+- **`CF` (Carry Flag)**: Se activa en `1` si ocurrió desbordamiento o acarreo sin signo en operaciones aritméticas.
+- **`SF` (Sign Flag)**: Refleja el bit más significativo (bit 7, MSB) del resultado. Si es `1`, el valor es negativo en **complemento a 2** (rango `-128` a `127`).
+
+### 4. Tabla Completa del Conjunto de Instrucciones (ISA)
+
+| Mnemónico / Sintaxis | Opcode | Bytes | Operandos | Acción / Operación | Banderas Afectadas |
+|---|---|---:|---|---|---|
+| `MOV AX, imm` | 10h | 2 | Inmediato | AX ← imm | No cambian |
+| `MOV BX, imm` | 11h | 2 | Inmediato | BX ← imm | No cambian |
+| `MOV AX, BX` | 12h | 1 | Registro | AX ← BX | No cambian |
+| `MOV BX, AX` | 13h | 1 | Registro | BX ← AX | No cambian |
+| `LOAD AX, [dir]` | 20h | 2 | Dirección | AX ← RAM[dir] vía MAR y MDR | No cambian |
+| `LOAD BX, [dir]` | 21h | 2 | Dirección | BX ← RAM[dir] vía MAR y MDR | No cambian |
+| `STORE [dir], AX` | 30h | 2 | Dirección | RAM[dir] ← AX vía MAR y MDR | No cambian |
+| `STORE [dir], BX` | 31h | 2 | Dirección | RAM[dir] ← BX vía MAR y MDR | No cambian |
+| `ADD AX, imm` | 40h | 2 | Inmediato | AX ← AX + imm | ZF, CF, SF |
+| `ADD AX, BX` | 41h | 1 | Registro | AX ← AX + BX | ZF, CF, SF |
+| `ADD BX, imm` | 42h | 2 | Inmediato | BX ← BX + imm | ZF, CF, SF |
+| `ADD BX, AX` | 43h | 1 | Registro | BX ← BX + AX | ZF, CF, SF |
+| `SUB AX, imm` | 50h | 2 | Inmediato | AX ← AX − imm | ZF, CF, SF |
+| `SUB AX, BX` | 51h | 1 | Registro | AX ← AX − BX | ZF, CF, SF |
+| `SUB BX, imm` | 52h | 2 | Inmediato | BX ← BX − imm | ZF, CF, SF |
+| `SUB BX, AX` | 53h | 1 | Registro | BX ← BX − AX | ZF, CF, SF |
+| `INC AX` | 60h | 1 | Registro | AX ← AX + 1 | ZF, CF, SF |
+| `INC BX` | 61h | 1 | Registro | BX ← BX + 1 | ZF, CF, SF |
+| `DEC AX` | 62h | 1 | Registro | AX ← AX − 1 | ZF, CF, SF |
+| `DEC BX` | 63h | 1 | Registro | BX ← BX − 1 | ZF, CF, SF |
+| `CMP AX, imm` | 70h | 2 | Inmediato | Evalúa AX − imm (AX no cambia) | ZF, CF, SF |
+| `CMP AX, BX` | 71h | 1 | Registro | Evalúa AX − BX (AX no cambia) | ZF, CF, SF |
+| `CMP BX, imm` | 72h | 2 | Inmediato | Evalúa BX − imm (BX no cambia) | ZF, CF, SF |
+| `CMP BX, AX` | 73h | 1 | Registro | Evalúa BX − AX (BX no cambia) | ZF, CF, SF |
+| `JMP dir` | 80h | 2 | Dirección | PC ← dir (Salto incondicional) | No cambian |
+| `JZ dir` | 90h | 2 | Dirección | PC ← dir si ZF = 1 | No cambian |
+| `JNZ dir` | A0h | 2 | Dirección | PC ← dir si ZF = 0 | No cambian |
+| `HLT` | FFh | 1 | Ninguno | Detiene la CPU (Estado HALTED) | No cambian |
+
+---
+
 ## 🧩 Responsabilidad de los Módulos VBA
 
 | Módulo | Capa | Responsabilidad Principal |
@@ -106,7 +163,7 @@ sequenceDiagram
   Note over PC, IR: 1. FASE FETCH (Búsqueda de instrucción/byte)
   PC->>MAR: MAR ← PC
   MAR->>RAM: Colocar dirección en bus
-  RAM->>MDR: MDR ← RAM[MAR]
+  RAM->>MDR: MDR ← RAM[RAM]
   MDR->>IR: IR ← MDR
   PC->>PC: PC ← (PC + 1) mod 256
 
