@@ -2,9 +2,9 @@ Attribute VB_Name = "modPruebas"
 Option Explicit
 
 ' Prueba aislada de las 12 familias ISA + programa corto en STEP y RUN hasta HLT.
-' Programa demo (multiplicacion): PruebaProgramaDemo ? docs/PROGRAMA_DEMO.md
-' En la ventana Inmediato: PruebaISACompleta, PruebaProgramaDemo
-' Notas: docs/PRUEBAS.md
+' Programa demo (multiplicacion): PruebaProgramaDemo, PruebaDemoStepRun
+' En la ventana Inmediato: PruebaISACompleta, PruebaProgramaDemo, PruebaDemoStepRun
+' Notas: docs/PRUEBAS.md, docs/PROGRAMA_DEMO.md
 
 Public Sub PruebaISACompleta()
     Dim fallos As Long
@@ -402,3 +402,193 @@ Public Sub PruebaProgramaDemo()
 Fallo:
     Debug.Print "FALLO inesperado", Err.Number, Err.Description
 End Sub
+
+' Tras DoLoad desde la hoja PROGRAM: deja N=3, M=4, producto=0 en datos.
+Public Sub SembrarDatosDemo()
+    WriteMem &H80, 3
+    WriteMem &H81, 4
+    WriteMem &H82, 0
+    Debug.Print "datos demo", "[80h]=3 [81h]=4 [82h]=0"
+End Sub
+
+' Issue 27: demo completo en STEP y RUN; log final debe coincidir.
+Public Sub PruebaDemoStepRun()
+    Dim fallos As Long
+    Dim lineas() As String
+    Dim logStep() As String
+    Dim logRun() As String
+    Dim filasStep As Long
+    Dim filasRun As Long
+    Dim axStep As Byte
+    Dim axRun As Byte
+    Dim ramStep As Byte
+    Dim ramRun As Byte
+    Dim i As Long
+    Dim maxPasos As Long
+    Dim faseUI As String
+    Dim microUI As String
+
+    On Error GoTo Fallo
+    fallos = 0
+    maxPasos = 800
+    lineas = LineasDemoMultiplicacion()
+
+    Debug.Print "=== Demo STEP (LOAD + resaltado + log) ==="
+    ClearMem
+    WriteMem &H80, 3
+    WriteMem &H81, 4
+    WriteMem &H82, 0
+    CargarPrograma lineas
+    SembrarDatosDemo
+    DoReset
+    CorrerHastaHltStep maxPasos
+
+    filasStep = FilasLog
+    axStep = AX
+    ramStep = ReadMem(&H82)
+    On Error Resume Next
+    faseUI = CStr(Range("rngPhase").Value & "")
+    microUI = CStr(Range("rngMicroOp").Value & "")
+    On Error GoTo Fallo
+
+    If EstadoCPU <> HALTED Or axStep <> 12 Or ramStep <> 12 Then
+        Debug.Print "FALLO STEP resultado", "estado=" & EstadoCPU, "AX=" & axStep, "RAM82=" & ramStep
+        fallos = fallos + 1
+    Else
+        Debug.Print "STEP resultado", "ok", "AX=0Ch [82h]=0Ch HALTED"
+    End If
+
+    If filasStep < 20 Then
+        Debug.Print "FALLO STEP log corto", "filas=" & filasStep
+        fallos = fallos + 1
+    Else
+        Debug.Print "STEP log", "ok", "filas=" & filasStep
+    End If
+
+    If Len(faseUI) = 0 Or Len(microUI) = 0 Then
+        Debug.Print "FALLO UI no refleja paso", "fase=" & faseUI, "micro=" & microUI
+        fallos = fallos + 1
+    Else
+        Debug.Print "UI tras STEP", "ok", "fase=" & faseUI, "micro=" & Left$(microUI, 40)
+    End If
+
+    logStep = CapturarLogTextos()
+
+    Debug.Print "=== Demo RUN (mismo programa, delay via TickRun) ==="
+    ClearMem
+    WriteMem &H80, 3
+    WriteMem &H81, 4
+    WriteMem &H82, 0
+    CargarPrograma lineas
+    SembrarDatosDemo
+    DoReset
+    SetDelayMs 50
+    CorrerHastaHltRun maxPasos
+
+    filasRun = FilasLog
+    axRun = AX
+    ramRun = ReadMem(&H82)
+    logRun = CapturarLogTextos()
+
+    If EstadoCPU <> HALTED Or axRun <> 12 Or ramRun <> 12 Then
+        Debug.Print "FALLO RUN resultado", "estado=" & EstadoCPU, "AX=" & axRun, "RAM82=" & ramRun
+        fallos = fallos + 1
+    Else
+        Debug.Print "RUN resultado", "ok", "AX=0Ch [82h]=0Ch HALTED"
+    End If
+
+    If filasStep <> filasRun Then
+        Debug.Print "FALLO filas STEP/RUN", filasStep, filasRun
+        fallos = fallos + 1
+    Else
+        Debug.Print "filas STEP==RUN", "ok", filasRun
+    End If
+
+    If axStep <> axRun Or ramStep <> ramRun Then
+        Debug.Print "FALLO resultado STEP/RUN difiere"
+        fallos = fallos + 1
+    End If
+
+    If Not LogsIguales(logStep, logRun) Then
+        Debug.Print "FALLO log STEP y RUN no coinciden"
+        fallos = fallos + 1
+        For i = LBound(logStep) To UBound(logStep)
+            If i > UBound(logRun) Then Exit For
+            If logStep(i) <> logRun(i) Then
+                Debug.Print "  dif fila", i + 1, Left$(logStep(i), 50), Left$(logRun(i), 50)
+                Exit For
+            End If
+        Next i
+    Else
+        Debug.Print "log STEP==RUN", "ok", "mismo texto por micro"
+    End If
+
+    If fallos = 0 Then
+        Debug.Print "Demo STEP y RUN: resultado y log coinciden"
+    Else
+        Debug.Print "FALLOS", fallos
+    End If
+    Exit Sub
+Fallo:
+    Debug.Print "FALLO PruebaDemoStepRun", Err.Number, Err.Description
+End Sub
+
+Private Function LineasDemoMultiplicacion() As String()
+    Dim lineas() As String
+    ReDim lineas(0 To 11)
+    lineas(0) = "MOV AX, 00h"
+    lineas(1) = "LOAD BX, [80h]"
+    lineas(2) = "CMP BX, 00h"
+    lineas(3) = "JZ 12h"
+    lineas(4) = "LOAD BX, [81h]"
+    lineas(5) = "ADD AX, BX"
+    lineas(6) = "LOAD BX, [80h]"
+    lineas(7) = "DEC BX"
+    lineas(8) = "STORE [80h], BX"
+    lineas(9) = "JMP 02h"
+    lineas(10) = "STORE [82h], AX"
+    lineas(11) = "HLT"
+    LineasDemoMultiplicacion = lineas
+End Function
+
+Private Function CapturarLogTextos() As String()
+    Dim ws As Worksheet
+    Dim n As Long
+    Dim i As Long
+    Dim out() As String
+
+    On Error GoTo Vacio
+    Set ws = ThisWorkbook.Worksheets("LOG")
+    n = FilasLog
+    If n <= 0 Then
+        ReDim out(0 To 0)
+        out(0) = ""
+        CapturarLogTextos = out
+        Exit Function
+    End If
+    ReDim out(0 To n - 1)
+    For i = 0 To n - 1
+        out(i) = CStr(ws.Cells(2 + i, 13).Value & "")
+    Next i
+    CapturarLogTextos = out
+    Exit Function
+Vacio:
+    ReDim out(0 To 0)
+    out(0) = ""
+    CapturarLogTextos = out
+End Function
+
+Private Function LogsIguales(ByRef a() As String, ByRef b() As String) As Boolean
+    Dim i As Long
+    If UBound(a) <> UBound(b) Or LBound(a) <> LBound(b) Then
+        LogsIguales = False
+        Exit Function
+    End If
+    For i = LBound(a) To UBound(a)
+        If a(i) <> b(i) Then
+            LogsIguales = False
+            Exit Function
+        End If
+    Next i
+    LogsIguales = True
+End Function

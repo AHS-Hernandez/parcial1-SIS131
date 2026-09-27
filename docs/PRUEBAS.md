@@ -39,8 +39,42 @@ Bytes en RAM: `10h 02h  40h 03h  30h 80h  FFh`
 
 Si STEP y RUN no coinciden en AX, BX, flags o RAM(80h), la prueba falla.
 
-## 3. Cómo repetir
+## 3. Cómo repetir (ISA)
 
 1. Importar `src/modPruebas.bas` (y módulos previos al día).
 2. Ventana Inmediato: `PruebaISACompleta`
 3. Éxito: `ISA completa y ciclo STEP/RUN hasta HLT OK`
+
+## 4. Programa demostrativo en STEP y RUN (issue 27)
+
+Prueba: `PruebaDemoStepRun` en `modPruebas`.
+
+### Procedimiento
+
+1. Carga el ensamblador de multiplicación (`docs/PROGRAMA_DEMO.md`) con `CargarPrograma`.
+2. Datos: `[80h]=3`, `[81h]=4`, `[82h]=0`.
+3. **STEP:** `DoReset` + `DoStep` hasta `HALTED`.
+4. Comprueba UI (`rngPhase`, `rngMicroOp`) y que el log tenga muchas filas (una por micro).
+5. Repite en **RUN** (`TickRun` + `DetenerRun`, delay 50 ms en la prueba).
+6. Compara: mismo `AX`, mismo `RAM(82h)`, mismo número de filas y **mismo texto** de cada fila del LOG.
+
+### Esperado (N=3, M=4)
+
+| | Valor |
+|---|---|
+| Estado | HALTED |
+| AX | 0Ch (12) |
+| RAM(82h) | 0Ch |
+| LOG STEP vs RUN | idéntico línea a línea |
+
+Éxito en Inmediato: `Demo STEP y RUN: resultado y log coinciden`
+
+### Manual en Excel
+
+```
+DoLoad
+SembrarDatosDemo
+DoReset
+```
+
+Luego `DoStep` repetido (mirar CPU + LOG), o `DoRun` con `rngDelay` visible. Al terminar, `? AX` y `? ReadMem(&H82)` deben ser 12; la hoja LOG debe tener el mismo recorrido que en STEP.
