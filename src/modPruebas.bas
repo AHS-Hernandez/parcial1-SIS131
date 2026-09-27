@@ -4,8 +4,9 @@ Option Explicit
 ' Prueba aislada de las 12 familias ISA + programa corto en STEP y RUN hasta HLT.
 ' Programa demo (multiplicacion): PruebaProgramaDemo, PruebaDemoStepRun
 ' Casos limite: PruebaCasosLimite
+' Flujo / HLT / validaciones: PruebaFlujoHltValidaciones
 ' En la ventana Inmediato: PruebaISACompleta, PruebaProgramaDemo, PruebaDemoStepRun,
-'   PruebaCasosLimite
+'   PruebaCasosLimite, PruebaFlujoHltValidaciones
 ' Notas: docs/PRUEBAS.md, docs/PROGRAMA_DEMO.md
 
 Public Sub PruebaISACompleta()
@@ -755,4 +756,201 @@ TrasUI:
     Exit Sub
 Fallo:
     Debug.Print "FALLO PruebaCasosLimite", Err.Number, Err.Description
+End Sub
+
+' Issue 29: JZ/JNZ tomados y no tomados, HLT, direccion/opcode invalidos.
+Public Sub PruebaFlujoHltValidaciones()
+    Dim fallos As Long
+    Dim pc0 As Byte
+    Dim ax0 As Byte
+    Dim bx0 As Byte
+    Dim z0 As Byte
+    Dim c0 As Byte
+    Dim s0 As Byte
+    Dim guardado As Byte
+    Dim info As tInstruccion
+    Dim huboError As Boolean
+    Dim msgErr As String
+
+    On Error GoTo Fallo
+    fallos = 0
+    Debug.Print "=== Flujo JZ/JNZ, HLT y validaciones ==="
+
+    ' --- JZ tomado (ZF=1) ---
+    ClearMem
+    ResetRegisters
+    SetPC &H20
+    UpdateFlags 0, 0
+    Preparar DecodeByte(OP_JZ), &H80
+    PasoExecute
+    PasoStore
+    If PC <> &H80 Or modFlags.ZF <> 1 Then
+        Debug.Print "FALLO JZ tomado", "esp PC=80h ZF=1", "obt PC=" & Hex$(PC) & "h ZF=" & modFlags.ZF
+        fallos = fallos + 1
+    Else
+        Debug.Print "JZ tomado (ZF=1)", "ok", "esp PC=80h obt PC=80h"
+    End If
+
+    ' --- JZ no tomado (ZF=0) ---
+    ClearMem
+    ResetRegisters
+    SetPC &H22
+    pc0 = PC
+    UpdateFlags 1, 0
+    Preparar DecodeByte(OP_JZ), &H90
+    PasoExecute
+    PasoStore
+    If PC <> pc0 Or modFlags.ZF <> 0 Then
+        Debug.Print "FALLO JZ no tomado", "esp PC=" & Hex$(pc0) & "h", "obt PC=" & Hex$(PC) & "h"
+        fallos = fallos + 1
+    Else
+        Debug.Print "JZ no tomado (ZF=0)", "ok", "esp PC=" & Hex$(pc0) & "h obt igual"
+    End If
+
+    ' --- JNZ tomado (ZF=0) ---
+    ClearMem
+    ResetRegisters
+    SetPC &H30
+    UpdateFlags 7, 0
+    Preparar DecodeByte(OP_JNZ), &HA0
+    PasoExecute
+    PasoStore
+    If PC <> &HA0 Or modFlags.ZF <> 0 Then
+        Debug.Print "FALLO JNZ tomado", "esp PC=A0h", "obt PC=" & Hex$(PC) & "h"
+        fallos = fallos + 1
+    Else
+        Debug.Print "JNZ tomado (ZF=0)", "ok", "esp PC=A0h obt PC=A0h"
+    End If
+
+    ' --- JNZ no tomado (ZF=1) ---
+    ClearMem
+    ResetRegisters
+    SetPC &H33
+    pc0 = PC
+    UpdateFlags 0, 1
+    Preparar DecodeByte(OP_JNZ), &HB0
+    PasoExecute
+    PasoStore
+    If PC <> pc0 Or modFlags.ZF <> 1 Then
+        Debug.Print "FALLO JNZ no tomado", "esp PC=" & Hex$(pc0) & "h", "obt PC=" & Hex$(PC) & "h"
+        fallos = fallos + 1
+    Else
+        Debug.Print "JNZ no tomado (ZF=1)", "ok", "esp PC=" & Hex$(pc0) & "h obt igual"
+    End If
+
+    ' --- HLT: HALTED, registros/flags intactos, Fetch no avanza ---
+    ClearMem
+    ResetRegisters
+    SetAX &H11
+    SetBX &H22
+    SetPC &H50
+    IniciarFetch
+    UpdateFlags 3, 1
+    ax0 = AX: bx0 = BX: pc0 = PC
+    z0 = modFlags.ZF: c0 = modFlags.CF: s0 = modFlags.SF
+    Preparar DecodeByte(OP_HLT), 0
+    PasoExecute
+    PasoStore
+    If EstadoCPU <> HALTED Or AX <> ax0 Or BX <> bx0 Or PC <> pc0 _
+       Or modFlags.ZF <> z0 Or modFlags.CF <> c0 Or modFlags.SF <> s0 Then
+        Debug.Print "FALLO HLT", "esp HALTED AX=11h BX=22h", "obt estado=" & EstadoCPU & " AX=" & Hex$(AX)
+        fallos = fallos + 1
+    Else
+        Debug.Print "HLT detiene", "ok", "esp HALTED obt HALTED, regs/flags intactos"
+    End If
+
+    pc0 = PC
+    PasoFetch
+    If PC <> pc0 Or EstadoCPU <> HALTED Then
+        Debug.Print "FALLO HLT frena Fetch", "esp PC intacto HALTED", "obt PC=" & Hex$(PC) & " estado=" & EstadoCPU
+        fallos = fallos + 1
+    Else
+        Debug.Print "HLT frena Fetch", "ok", "esp PC intacto obt igual"
+    End If
+
+    ' --- Direccion invalida: error controlado, RAM intacta ---
+    ClearMem
+    WriteMem 1, &H5A
+    guardado = RAM(1)
+    huboError = False
+    msgErr = ""
+    On Error Resume Next
+    Err.Clear
+    WriteMem -1, 1
+    If Err.Number <> 0 Then
+        huboError = True
+        msgErr = Err.Description
+    End If
+    On Error GoTo Fallo
+    If Not huboError Or RAM(1) <> guardado Then
+        Debug.Print "FALLO dir invalida", "esp error + RAM intacta", "obt err=" & huboError & " RAM1=" & RAM(1)
+        fallos = fallos + 1
+    Else
+        Debug.Print "dir invalida (-1)", "ok", "esp error controlado obt " & msgErr
+    End If
+
+    huboError = False
+    msgErr = ""
+    On Error Resume Next
+    Err.Clear
+    ReadMem 256
+    If Err.Number <> 0 Then
+        huboError = True
+        msgErr = Err.Description
+    End If
+    On Error GoTo Fallo
+    If Not huboError Then
+        Debug.Print "FALLO ReadMem 256", "esp error", "obt sin error"
+        fallos = fallos + 1
+    Else
+        Debug.Print "ReadMem 256", "ok", "esp error controlado obt " & msgErr
+    End If
+
+    ' --- Opcode invalido: DecodeByte no encontrado; Decode -> HALTED ---
+    info = DecodeByte(0)
+    If info.Encontrada Or Len(info.Sintaxis) > 0 Then
+        Debug.Print "FALLO opcode 00h DecodeByte", "esp Encontrada=False", "obt Encontrada=" & info.Encontrada
+        fallos = fallos + 1
+    Else
+        Debug.Print "opcode 00h DecodeByte", "ok", "esp no encontrado obt Encontrada=False"
+    End If
+
+    ClearMem
+    ResetRegisters
+    IniciarFetch
+    SetIR 0
+    PasoDecode
+    If EstadoCPU <> HALTED Or InstruccionActual.Encontrada Then
+        Debug.Print "FALLO opcode 00h Decode", "esp HALTED", "obt estado=" & EstadoCPU & " enc=" & InstruccionActual.Encontrada
+        fallos = fallos + 1
+    Else
+        Debug.Print "opcode 00h Decode", "ok", "esp HALTED obt HALTED (error controlado)"
+    End If
+
+    ' Mnemonico desconocido en ensamblado
+    huboError = False
+    msgErr = ""
+    On Error Resume Next
+    Err.Clear
+    MnemonicToOpcode "NOP"
+    If Err.Number <> 0 Then
+        huboError = True
+        msgErr = Err.Description
+    End If
+    On Error GoTo Fallo
+    If Not huboError Then
+        Debug.Print "FALLO mnemonico NOP", "esp error", "obt sin error"
+        fallos = fallos + 1
+    Else
+        Debug.Print "mnemonico NOP", "ok", "esp error controlado obt " & msgErr
+    End If
+
+    If fallos = 0 Then
+        Debug.Print "Flujo JZ/JNZ, HLT y validaciones OK"
+    Else
+        Debug.Print "FALLOS", fallos
+    End If
+    Exit Sub
+Fallo:
+    Debug.Print "FALLO PruebaFlujoHltValidaciones", Err.Number, Err.Description
 End Sub
