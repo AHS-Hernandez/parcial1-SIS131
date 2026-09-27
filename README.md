@@ -14,6 +14,53 @@ El propósito del simulador es modelar y visualizar en tiempo real el funcionami
 
 ---
 
+## 🧮 Programa Demostrativo y Traza de Ejecución
+
+El simulador incluye de fábrica la ejecución del algoritmo de **Multiplicación por Sumas Sucesivas** ($3 \times 4 = 12$).
+
+### 1. Datos de Entrada y Salida
+- **`RAM[80h]`** = `03h` (Contador de iteraciones $N$).
+- **`RAM[81h]`** = `04h` (Multiplicando $M$).
+- **`RAM[82h]`** = `0Ch` (Resultado final del Producto = 12 en decimal).
+
+### 2. Código en Ensamblador (`Hoja PROGRAM`)
+```assembly
+00h: MOV AX, 00h     ; Inicializar Producto AX ← 0
+02h: LOAD BX, [80h]  ; LOOP: BX ← N
+04h: CMP BX, 00h     ; ¿N == 0?
+06h: JZ 12h          ; Si ZF=1, saltar a FIN (12h)
+08h: LOAD BX, [81h]  ; BX ← M (4)
+0Ah: ADD AX, BX      ; AX ← AX + M
+0Bh: LOAD BX, [80h]  ; BX ← N
+0Dh: DEC BX          ; N ← N - 1
+0Eh: STORE [80h], BX ; Guardar nuevo N en RAM[80h]
+10h: JMP 02h         ; Volver al LOOP
+12h: STORE [82h], AX ; FIN: Guardar producto final en RAM[82h]
+14h: HLT             ; Detener la CPU
+```
+
+### 3. Traza Matemáticamente Verificada (Paso a Paso)
+
+| Iteración / Evento | Dirección PC | Instrucción | AX (Acumulador) | BX (Trabajo) | N (`RAM[80h]`) | Producto (`RAM[82h]`) | ZF | CF | SF | Estado CPU |
+|---|:---:|---|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|
+| **Inicio** | `00h` | `MOV AX, 00h` | `00h` | `00h` | `03h` | `00h` | 0 | 0 | 0 | RUNNING |
+| **Bucle 1 (Inicio)** | `02h` | `LOAD BX, [80h]` | `00h` | `03h` | `03h` | `00h` | 0 | 0 | 0 | RUNNING |
+| **Bucle 1 (Evaluar)** | `04h` | `CMP BX, 00h` | `00h` | `03h` | `03h` | `00h` | 0 | 0 | 0 | RUNNING |
+| **Bucle 1 (Suma)** | `0Ah` | `ADD AX, BX` | `04h` | `04h` | `03h` | `00h` | 0 | 0 | 0 | RUNNING |
+| **Bucle 1 (Decrementar)**| `0Dh` | `DEC BX` | `04h` | `02h` | `02h` | `00h` | 0 | 0 | 0 | RUNNING |
+| **Bucle 2 (Inicio)** | `02h` | `LOAD BX, [80h]` | `04h` | `02h` | `02h` | `00h` | 0 | 0 | 0 | RUNNING |
+| **Bucle 2 (Suma)** | `0Ah` | `ADD AX, BX` | `08h` | `04h` | `02h` | `00h` | 0 | 0 | 0 | RUNNING |
+| **Bucle 2 (Decrementar)**| `0Dh` | `DEC BX` | `08h` | `01h` | `01h` | `00h` | 0 | 0 | 0 | RUNNING |
+| **Bucle 3 (Inicio)** | `02h` | `LOAD BX, [80h]` | `08h` | `01h` | `01h` | `00h` | 0 | 0 | 0 | RUNNING |
+| **Bucle 3 (Suma)** | `0Ah` | `ADD AX, BX` | `0Ch` (12) | `04h` | `01h` | `00h` | 0 | 0 | 0 | RUNNING |
+| **Bucle 3 (Decrementar)**| `0Dh` | `DEC BX` | `0Ch` | `00h` | `00h` | `00h` | **1** | 0 | 0 | RUNNING |
+| **Fin del Bucle** | `04h` | `CMP BX, 00h` | `0Ch` | `00h` | `00h` | `00h` | **1** | 0 | 0 | RUNNING |
+| **Salto Condicional** | `06h` | `JZ 12h` | `0Ch` | `00h` | `00h` | `00h` | 1 | 0 | 0 | RUNNING |
+| **Escritura Final** | `12h` | `STORE [82h], AX` | `0Ch` | `00h` | `00h` | **`0Ch`** | 1 | 0 | 0 | RUNNING |
+| **Parada** | `14h` | `HLT` | `0Ch` | `00h` | `00h` | `0Ch` | 1 | 0 | 0 | **HALTED** |
+
+---
+
 ## 🚀 Guía de Instalación y Manual de Usuario
 
 ### 1. Requisitos e Instalación
@@ -201,7 +248,7 @@ sequenceDiagram
   Note over PC, IR: 1. FASE FETCH (Búsqueda de instrucción/byte)
   PC->>MAR: MAR ← PC
   MAR->>RAM: Colocar dirección en bus
-  RAM->>MDR: MDR ← RAM[MAR]
+  RAM->>MDR: MDR ← RAM[RAM]
   MDR->>IR: IR ← MDR
   PC->>PC: PC ← (PC + 1) mod 256
 

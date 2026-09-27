@@ -13,7 +13,7 @@
 
 ## 2. Especificación
 
-| Celda | Rol | Ejemplo de defensa |
+| Celda | Rol | Ejemplo de ejecución |
 |---|---|---|
 | `[80h]` | Contador N (se decrementa) | `03h` |
 | `[81h]` | Multiplicando M (fijo) | `04h` |
@@ -94,6 +94,6 @@ Final: **AX = 0Ch**, **RAM(82h) = 0Ch**, **HALTED**, N en 80h quedó en 0.
 4. **RESET** no borra la RAM: se puede repetir STEP/RUN sobre el mismo código.
 5. **RUN** hasta HLT o **STEP** narrando Fetch → Decode → Execute/Store en el bucle.
 
-## 7. Defensa en una frase
+## 7. Resumen de funcionamiento
 
 “Multiplico sumando M (en 81h) tantas veces como diga N (en 80h); el contador baja con DEC, el bucle corta con JZ cuando ZF=1, y el producto queda en 82h.”
