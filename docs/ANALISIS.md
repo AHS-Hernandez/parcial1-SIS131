@@ -1,51 +1,44 @@
-# Análisis de la consigna — Parcial 1
+# Análisis de Requerimientos y Rúbrica — Parcial 1
 
 Simulador de CPU von Neumann / x86 de 8 bits y memoria principal.  
 Materia: Arquitectura de Computadoras (SIS-131). Docente: Ing. Paulo César Loayza Carrasco.  
-Ponderación: 100 puntos. Plataforma elegida: **Microsoft Excel + VBA (`.xlsm`)**.
+Plataforma elegida: **Microsoft Excel + VBA (`.xlsm`)**.
 
-Este documento sirve para no perder ni un requisito y para construir directo al nivel **Excelente (90–100)**. No es el README final ni el diseño de la ISA definitiva: marca qué exige la consigna, qué suma, qué baja la nota y en qué orden conviene construir.
+Este documento detalla la especificación técnica de la consigna, la rúbrica analítica de evaluación y las dependencias de diseño para la implementación del simulador.
 
 ## Cómo usarlo
 
-| Si vas a… | Lee solo |
+| Sección | Contenido |
 |---|---|
-| Saber si algo es obligatorio | [Inventario](#1-inventario-de-lo-obligatorio) |
-| Decidir si un detalle “alcanza” o hace falta más | [Qué da puntos](#2-qué-da-puntos) |
-| Evitar una anulación o una banda baja | [Qué resta o anula](#3-qué-resta-o-anula) |
-| Programar sin trabarte por dependencias | [Dependencias](#4-dependencias-entre-componentes) |
-| Cerrar una decisión que la consigna no fija | [Decisiones](#5-decisiones-de-diseño) |
-| Escribir el ciclo paso a paso | [Micro-operaciones](#6-ciclo-de-instrucción-al-detalle) |
-| Preparar la defensa de 15 minutos | [Defensa](#10-riesgos-y-guion-de-la-defensa) |
-| Revisar antes de cerrar el repo | [Lista Excelente](#11-lista-de-control-para-excelente) |
+| [Inventario de Requisitos](#1-inventario-de-lo-obligatorio) | Requisitos funcionales y técnicos obligatorios |
+| [Criterios de Evaluación](#2-qué-da-puntos) | Desglose de ponderaciones y rúbrica |
+| [Restricciones](#3-qué-resta-o-anula) | Reglas de entrega y penalizaciones |
+| [Dependencias](#4-dependencias-entre-componentes) | Flujo de desarrollo entre módulos |
+| [Decisiones de Diseño](#5-decisiones-de-diseño) | Justificación de decisiones de arquitectura |
+| [Micro-operaciones](#6-ciclo-de-instrucción-al-detalle) | Especificación del ciclo FSM |
+| [Defensa Oral](#10-riesgos-y-guion-de-la-defensa) | Guion y cronograma de demostración |
 
 ---
 
-## 0. Tablero de mando
+## 0. Tablero de control y evaluación
 
-**Meta de nota:** Excelente, 90 a 100. Meta interna de trabajo: **96–100**, para absorber un descuido de 4 puntos y seguir en la banda alta.
+**Criterios de entrega:**
 
-**Entrega (única forma válida):**
+1. Enlace al repositorio GitHub: https://github.com/AHS-Hernandez/parcial1-SIS131
+2. Enlace al tablero Kanban (GitHub Projects): https://github.com/users/AHS-Hernandez/projects/3
 
-1. Enlace al repositorio: https://github.com/AHS-Hernandez/parcial1-SIS131
-2. Enlace al tablero: https://github.com/users/AHS-Hernandez/projects/3
+**Cierre de actividad:** Domingo 29 de septiembre de 2026, 23:59 (Hora Santa Cruz).
 
-No se entrega `.zip` ni el `.xlsm` suelto en la plataforma académica. La evaluación se hace sobre esos dos enlaces.
+**Defensa:** 15 minutos, individual y obligatoria.
 
-**Cierre improrrogable:** domingo 29 de septiembre de 2026, 23:59, hora de Santa Cruz. Cualquier commit, pull request o cambio de tarjeta **después** de esa hora anula la entrega. GitHub guarda la hora en UTC y a veces la muestra así: las 20:00 de Santa Cruz del 29 ya son las 00:00 UTC del 30. Por eso el último movimiento real queda como muy tarde el **domingo 29 a las 18:00** (hora Santa Cruz), y el sábado 26 se reserva como cierre cómodo. Después de ese momento no se toca el repositorio ni el tablero.
-
-**Defensa:** 15 minutos, individual, obligatoria. Indicio de copia: 0 y remisión institucional.
-
-| # | Criterio | Pts | Banda Excelente | Lo que el docente tiene que ver |
+| # | Criterio | Pts | Nivel Excelente (90–100%) | Evidencia esperada |
 |---|---|---:|---|---|
-| 1 | Funcionalidad y ciclo de CPU | 30 | 27–30 | Fetch, Decode, Execute y Store reales, con MAR y MDR. STEP y RUN impecables. HLT y saltos precisos, también en bordes de banderas. |
-| 2 | Memoria y registros | 15 | 14–15 | Mapa 00h–FFh perfecto. Código y datos separados a la vista. PC, IR, MAR, MDR, AX, BX y ZF, CF, SF alineados con la ALU. |
-| 3 | Interfaz, usabilidad y dinamismo | 15 | 14–15 | Se ve qué componente está activo. Log cronológico. Controles claros. |
-| 4 | Kanban y Git | 15 | 14–15 | Tarjetas con criterio de aceptación. Commits atómicos y semánticos durante el desarrollo, no un commit final gigante. |
-| 5 | README | 10 | 10 | Mermaid, tabla ISA completa, manual de uso y traza del programa de prueba. |
-| 6 | Defensa oral | 15 | 14–15 | 10 + 5 minutos. Explica, demuestra y modifica código o memoria en vivo. |
-
-Si cada criterio cae en su mínimo Excelente, la nota es **27+14+14+14+10+14 = 93**. El techo es 100.
+| 1 | Funcionalidad y ciclo de CPU | 30 | 27–30 | Execución de Fetch, Decode, Execute y Store reales con MAR y MDR. Controles STEP y RUN funcionales, HLT y saltos precisos. |
+| 2 | Memoria y registros | 15 | 14–15 | Mapeo 00h–FFh perfecto. Segmentación visual código/datos. Registros PC, IR, MAR, MDR, AX, BX y banderas ZF, CF, SF. |
+| 3 | Interfaz y dinamismo | 15 | 14–15 | Resaltado dinámico de componentes activos. Log cronológico de micro-operaciones. |
+| 4 | Kanban y Git | 15 | 14–15 | Historias desglosadas con criterios de aceptación. Commits semánticos y atómicos. |
+| 5 | Documentación Markdown | 10 | 10 | README técnico con diagramas Mermaid, tabla de ISA y manual de usuario. |
+| 6 | Defensa oral | 15 | 14–15 | Exposición de 15 minutos con demostración en vivo y respuesta a preguntas de código/teoría. |
 
 ---
 

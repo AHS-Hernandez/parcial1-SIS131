@@ -1,17 +1,17 @@
-# Arquitectura general del simulador
+# Arquitectura General del Simulador
 
-CPU von Neumann / x86 de 8 bits y memoria principal, en Excel + VBA.  
-Este documento fija **cómo está partido el sistema**: hojas, módulos y modelo de datos. El análisis de la consigna, la rúbrica y la codificación propuesta de la ISA están en [`ANALISIS.md`](ANALISIS.md). Aquí no se repite la nota: se define la forma para que el Parcial 2 pueda agregar bus, entrada/salida e interrupciones sin reescribir la ALU.
+Simulador de CPU von Neumann / x86 de 8 bits y Memoria Principal en Microsoft Excel + VBA.  
+Este documento especifica la arquitectura del sistema: organización de hojas, módulos VBA, modelo de datos y flujo de control del simulador.
 
-## Cómo usarlo
+## Contenido del Documento
 
-| Si vas a… | Lee |
+| Sección | Descripción |
 |---|---|
-| Saber qué dato existe y quién lo posee | [Modelo de datos](#1-modelo-de-datos) |
-| Armar el `.xlsm` | [Hojas](#2-hojas-de-excel) |
-| Escribir o buscar un procedimiento | [Módulos](#3-módulos-vba) |
-| Seguir un clic de STEP | [Un paso del reloj](#4-un-paso-del-reloj) |
-| Dejar hueco para el Parcial 2 | [Extensión](#5-hueco-para-el-parcial-2) |
+| [Modelo de Datos](#1-modelo-de-datos) | Estructura de RAM, registros, banderas y estado de la CPU |
+| [Hojas de Excel](#2-hojas-de-excel) | Estructura de la interfaz gráfica y rangos nombrados |
+| [Módulos VBA](#3-módulos-vba) | Organización y responsabilidad de los módulos en `src/` |
+| [Un Paso del Reloj](#4-un-paso-del-reloj) | Diagrama de secuencia del ciclo de instrucción |
+| [Extensión Futura](#5-hueco-para-el-parcial-2) | Diseño modular para el Parcial 2 (Buses y E/S) |
 
 El libro se llama `SimuladorCPU.xlsm` y vive en la raíz del repositorio. Cada módulo se exporta a `src/` con el mismo nombre, para que Git muestre el cambio de código y no solo el binario.
 
@@ -205,15 +205,15 @@ Seis hojas, con estos nombres exactos.
 
 ### 2.1 Hoja CPU
 
-Bloques, de izquierda a derecha y de arriba abajo, para que en la defensa se señale sin buscar:
+Organización de bloques en la interfaz gráfica para facilitar la inspección visual:
 
 1. Estado (`eCPUState`) y fase (`ePhase`).
-2. Camino de Fetch: PC, MAR, MDR, IR, con la flecha del paso activo.
-3. Banco: AX y BX.
-4. ALU: operación en curso y el resultado todavía no escrito, cuando el paso es Execute.
+2. Camino de Fetch: PC, MAR, MDR, IR, con la indicación visual del paso activo.
+3. Banco de registros: AX y BX.
+4. ALU: operación en curso y resultado temporal durante la fase Execute.
 5. Banderas ZF, CF, SF.
-6. Panel de la instrucción actual (`Text`) y el nombre de la micro-operación.
-7. Botones: STEP, RUN, PAUSE, RESET, LOAD PROGRAM. Y una celda con el retardo de RUN, en milisegundos.
+6. Panel de la instrucción actual (`Text`) y micro-operación activa.
+7. Botones de control: STEP, RUN, PAUSE, RESET, LOAD PROGRAM y celda de retardo (ms).
 
 ### 2.2 Hoja MEMORY
 
