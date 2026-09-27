@@ -524,6 +524,7 @@ Public Sub DoStep()
             PasoDecode
             If mEstado = HALTED Then
                 mUltimaMicroOp = "DECODE: unknown opcode -> HALT"
+                LogPaso
                 RefreshUI
                 Exit Sub
             End If
@@ -540,6 +541,7 @@ Public Sub DoStep()
             PasoExecute
             If mEstado = HALTED Then
                 mUltimaMicroOp = "EXECUTE: HLT -> HALT"
+                LogPaso
                 RefreshUI
                 Exit Sub
             End If
@@ -555,6 +557,7 @@ Public Sub DoStep()
             mUltimaMicroOp = "STORE: write-back"
             ProgramarFase FETCH
     End Select
+    LogPaso
     RefreshUI
 End Sub
 
