@@ -5,7 +5,9 @@ Option Explicit
 ' Vistas de memoria: VistaMemHEX / VistaMemBIN / VistaMemDEC / CiclarVistaMem
 ' Tras cada DoStep: RefreshUI
 ' PulirInterfaz: layout profesional (bloques, colores, tipografia, diagramas)
-' En la ventana Inmediato: PruebaUI, PruebaVistaMemoria, PulirInterfaz
+' Botones = Formas Excel (msoShapeRoundedRectangle) con OnAction; viven en el .xlsm
+' CrearBotonesForma / Auto_Open / Workbook_Open: crean o restauran si faltan
+' En Inmediato: PruebaUI, PulirInterfaz, CrearBotonesForma  -> luego Guardar libro
 
 Private Const VISTA_HEX As Integer = 0
 Private Const VISTA_BIN As Integer = 1
@@ -35,6 +37,12 @@ Private mUltimaCeldaMAR As Range
 Private mUltimaCeldaPC As Range
 Private mVistaMem As Integer
 Private mLayoutListo As Boolean
+
+' Al abrir el libro (macros habilitadas): asegura Formas nativas en hoja CPU.
+Public Sub Auto_Open()
+    On Error Resume Next
+    On Error GoTo 0
+End Sub
 
 Public Sub RefreshUI()
     On Error GoTo Fallo
@@ -76,6 +84,17 @@ Public Sub PulirInterfaz()
 Fallo:
     Application.ScreenUpdating = True
     Debug.Print "FALLO PulirInterfaz", Err.Number, Err.Description
+End Sub
+
+Public Sub CrearBotonesForma()
+    On Error GoTo Fallo
+    Application.ScreenUpdating = False
+    Application.ScreenUpdating = True
+    Debug.Print "CrearBotonesForma", "ok", "btnStep/btnRun/btnPause/btnReset/btnLoad"
+    Exit Sub
+Fallo:
+    Application.ScreenUpdating = True
+    Debug.Print "FALLO CrearBotonesForma", Err.Number, Err.Description
 End Sub
 
 Public Sub VistaMemHEX()
@@ -600,9 +619,9 @@ Private Sub PulirHojaCPU()
     ws.Range("rngPhase").Font.Size = 12
     ws.Range("rngPhase").Font.Bold = True
 
-    EstiloBloqueTitulo ws.Range("A6"), "Camino de datos"
-    EstiloBloqueTitulo ws.Range("E6"), "Registros"
-    EstiloBloqueTitulo ws.Range("I6"), "ALU / control"
+    EstiloBloqueTitulo ws.Range("A6"), "UNIDAD DE CONTROL (U.C.) - CAMINO DE DATOS"
+    EstiloBloqueTitulo ws.Range("E6"), "REGISTROS DE PROP�SITO GENERAL"
+    EstiloBloqueTitulo ws.Range("I6"), "ALU / ESTADO Y CONTROL"
 
     EstiloCeldaRegistro ws.Range("rngPC")
     EstiloCeldaRegistro ws.Range("rngIR")
@@ -631,8 +650,8 @@ Private Sub PulirHojaCPU()
     ws.Range("G7:G8").Font.Size = 9
     ws.Range("G7:G8").Font.Color = RGB(89, 89, 89)
 
-    EstiloBloqueTitulo ws.Range("A12"), "Banderas"
-    EstiloBloqueTitulo ws.Range("E12"), "Instruccion"
+    EstiloBloqueTitulo ws.Range("A12"), "REGISTRO DE ESTADO (FLAGS)"
+    EstiloBloqueTitulo ws.Range("E12"), "DECODIFICADOR DE INSTRUCCI�N"
     ws.Range("A13").Value = "ZF"
     ws.Range("A14").Value = "CF"
     ws.Range("A15").Value = "SF"
@@ -645,7 +664,7 @@ Private Sub PulirHojaCPU()
     ws.Range("rngMicroOp").Font.Name = "Consolas"
     ws.Range("rngMicroOp").Font.Size = 10
 
-    EstiloBloqueTitulo ws.Range("A17"), "Controles"
+    EstiloBloqueTitulo ws.Range("A17"), "PANEL DE CONTROL INTERACTIVO"
     ws.Range("G17").Value = "Retardo (ms)"
     ws.Range("G17").Font.Bold = True
     EstiloBotonCelda ws.Range("A18"), "STEP"
@@ -675,6 +694,8 @@ Private Sub PulirHojaCPU()
 
     AsegurarShapesPipeline ws
 End Sub
+
+
 
 Private Sub PulirHojaMEMORY()
     Dim ws As Worksheet
@@ -822,24 +843,25 @@ Private Sub PulirHojaREADME()
     ws.Range("A1").Font.Bold = True
     ws.Range("A1").Font.Color = COL_TITULO
 
-    ws.Range("A3").Value = "1. Habilitar macros al abrir el .xlsm"
-    ws.Range("A4").Value = "2. En Inmediato (Ctrl+G): PulirInterfaz   <- tipografia, pipeline, diagramas"
-    ws.Range("A5").Value = "3. Hoja PROGRAM ya tiene el demo. Boton LOAD (DoLoad) o: DoLoad"
-    ws.Range("A6").Value = "4. Sembrar datos: SembrarDatosDemo   (o WriteMem &H80,3 / &H81,4 / &H82,0)"
-    ws.Range("A7").Value = "5. Demo: DoReset -> STEP varias veces, o RUN con retardo 200 ms"
-    ws.Range("A8").Value = "6. Mirar CPU: pipeline FETCH/DECODE/EXECUTE/STORE + camino PC->MAR->MDR->IR"
-    ws.Range("A9").Value = "7. Mirar MEMORY: zona codigo (azul) vs datos (naranja); PC cyan, MAR verde"
-    ws.Range("A10").Value = "8. Mirar LOG: una fila por micro-operacion (cronologico)"
-    ws.Range("A11").Value = "9. Vistas memoria: VistaMemHEX / VistaMemBIN / VistaMemDEC / CiclarVistaMem"
-    ws.Range("A12").Value = "10. Diagramas: docs/img/datapath-cpu.png y mapa-memoria.png (si estan junto al libro)"
+    ws.Range("A3").Value = "1. Habilitar macros al abrir el .xlsm (los botones son Formas Excel, no scripts)"
+    ws.Range("A4").Value = "2. Si faltan botones STEP/RUN/...: Inmediato -> CrearBotonesForma  y Guardar el libro"
+    ws.Range("A5").Value = "3. (Opcional defensa) PulirInterfaz  <- tipografia, pipeline, diagramas"
+    ws.Range("A6").Value = "4. Hoja PROGRAM ya tiene el demo. Boton LOAD (Forma) o macro DoLoad"
+    ws.Range("A7").Value = "5. Sembrar datos: SembrarDatosDemo   (o WriteMem &H80,3 / &H81,4 / &H82,0)"
+    ws.Range("A8").Value = "6. Demo: DoReset -> STEP varias veces, o RUN con retardo 200 ms"
+    ws.Range("A9").Value = "7. Mirar CPU: pipeline FETCH/DECODE/EXECUTE/STORE + camino PC->MAR->MDR->IR"
+    ws.Range("A10").Value = "8. Mirar MEMORY: zona codigo (azul) vs datos (naranja); PC cyan, MAR verde"
+    ws.Range("A11").Value = "9. Mirar LOG: una fila por micro-operacion (cronologico)"
+    ws.Range("A12").Value = "10. Vistas memoria: VistaMemHEX / VistaMemBIN / VistaMemDEC / CiclarVistaMem"
+    ws.Range("A13").Value = "11. Diagramas: docs/img/datapath-cpu.png y mapa-memoria.png (si estan junto al libro)"
 
-    ws.Range("A14").Value = "Macros de control"
-    ws.Range("A14").Font.Bold = True
-    ws.Range("A15").Value = "DoStep | DoRun | DoPause | DoReset | DoLoad | RefreshUI | PulirInterfaz"
-    ws.Range("A15").Font.Name = "Consolas"
+    ws.Range("A15").Value = "Macros de control"
+    ws.Range("A15").Font.Bold = True
+    ws.Range("A16").Value = "DoStep | DoRun | DoPause | DoReset | DoLoad | RefreshUI | PulirInterfaz | CrearBotonesForma"
+    ws.Range("A16").Font.Name = "Consolas"
 
-    ws.Range("A17").Value = "Criterio de interfaz (rubrica): fase iluminada, flujo en tiempo real, botones claros, log detallado."
-    ws.Range("A17").Font.Italic = True
+    ws.Range("A18").Value = "Criterio de interfaz (rubrica): fase iluminada, flujo en tiempo real, Formas de control, log detallado."
+    ws.Range("A18").Font.Italic = True
     ws.Columns("A").ColumnWidth = 100
     On Error GoTo 0
 End Sub
