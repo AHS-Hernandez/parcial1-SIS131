@@ -40,6 +40,7 @@ Public Const OP_CMP_BX_AX As Long = &H73
 Public Const OP_JMP As Long = &H80
 Public Const OP_JZ As Long = &H90
 Public Const OP_JNZ As Long = &HA0
+Public Const OP_JC As Long = &H98
 Public Const OP_AND_AX_IMM As Long = &HB0
 Public Const OP_AND_AX_BX As Long = &HB1
 Public Const OP_OR_AX_IMM As Long = &HC0
@@ -85,6 +86,7 @@ Public Function DecodeByte(ByVal opcode As Long) As tInstruccion
         Case OP_JMP: info = Armar(opcode, "JMP", "JMP dir", 2, "DIRECT")
         Case OP_JZ: info = Armar(opcode, "JZ", "JZ dir", 2, "DIRECT")
         Case OP_JNZ: info = Armar(opcode, "JNZ", "JNZ dir", 2, "DIRECT")
+        Case OP_JC: info = Armar(opcode, "JC", "JC dir", 2, "DIRECT")
         Case OP_AND_AX_IMM: info = Armar(opcode, "AND", "AND AX, imm", 2, "IMM")
         Case OP_AND_AX_BX: info = Armar(opcode, "AND", "AND AX, BX", 1, "REG")
         Case OP_OR_AX_IMM: info = Armar(opcode, "OR", "OR AX, imm", 2, "IMM")
@@ -132,6 +134,7 @@ Public Function MnemonicToOpcode(ByVal sintaxis As String) As Long
         Case "JMP DIR": MnemonicToOpcode = OP_JMP
         Case "JZ DIR": MnemonicToOpcode = OP_JZ
         Case "JNZ DIR": MnemonicToOpcode = OP_JNZ
+        Case "JC DIR": MnemonicToOpcode = OP_JC
         Case "AND AX, IMM": MnemonicToOpcode = OP_AND_AX_IMM
         Case "AND AX, BX": MnemonicToOpcode = OP_AND_AX_BX
         Case "OR AX, IMM": MnemonicToOpcode = OP_OR_AX_IMM

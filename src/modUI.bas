@@ -262,7 +262,7 @@ Private Sub AsegurarNombresUI()
     ThisWorkbook.Names.Add Name:="rngPipeExecute", RefersTo:="=CPU!$D$3"
     ThisWorkbook.Names.Add Name:="rngPipeStore", RefersTo:="=CPU!$E$3"
     
-    ThisWorkbook.Names.Add Name:="rngVistaMem", RefersTo:="=MEMORY!$D$22"
+    ThisWorkbook.Names.Add Name:="rngVistaMem", RefersTo:="=MEMORY!$G$22"
     On Error GoTo 0
 End Sub
 
@@ -342,9 +342,19 @@ Private Sub PintarRegistrosYBanderas()
     Range("rngMDR").Value = Hex2(MDR)
     Range("rngAX").Value = Hex2(AX)
     Range("rngBX").Value = Hex2(BX)
+    Range("rngTemp").Value = Hex2(Temporal)
     Range("rngZF").Value = modFlags.ZF
     Range("rngCF").Value = modFlags.CF
     Range("rngSF").Value = modFlags.SF
+    
+    ' Actualizar la descripcion del IR con el mnemonico decodificado
+    Dim ws As Worksheet
+    Set ws = ThisWorkbook.Worksheets("CPU")
+    If InstruccionActual.Encontrada Then
+        ws.Range("C11").Value = InstruccionActual.Mnemonic
+    Else
+        ws.Range("C11").Value = "Opcode en curso"
+    End If
 End Sub
 
 Private Sub PintarBanderasLED()
@@ -420,6 +430,7 @@ Private Sub PintarCaminoDatos()
         flu = "Execute / ALU / saltos"
         ResaltarRango "rngAX"
         ResaltarRango "rngBX"
+        ResaltarRango "rngTemp"
         If InStr(1, op, "LOAD", vbTextCompare) > 0 Or InStr(1, op, "STORE", vbTextCompare) > 0 Then
             ResaltarRango "rngMAR"
             ResaltarRango "rngMDR"
@@ -428,6 +439,7 @@ Private Sub PintarCaminoDatos()
         flu = "Store / write-back"
         ResaltarRango "rngAX"
         ResaltarRango "rngBX"
+        ResaltarRango "rngTemp"
         ResaltarRango "rngMDR"
     End If
 
@@ -507,24 +519,32 @@ Private Sub PintarMemoria()
         celda.Value = texto
     Next addr
 
-    ' Leyenda en MEMORY
+    ' Actualizar indicador de vista y resaltar boton activo
     On Error Resume Next
-    Range("MEMORY!A22").Value = "Codigo"
-    Range("MEMORY!B22").Value = "00h-7Fh"
-    Range("MEMORY!A22").Interior.Color = colorCodigo
-    Range("MEMORY!A23").Value = "Datos"
-    Range("MEMORY!B23").Value = "80h-FFh"
-    Range("MEMORY!A23").Interior.Color = colorDatos
-    Range("MEMORY!C22").Value = "Vista:"
     Range("rngVistaMem").Value = NombreVistaMem()
-    Range("MEMORY!E22").Value = "HEX"
-    Range("MEMORY!F22").Value = "BIN"
-    Range("MEMORY!G22").Value = "DEC"
-    Range("MEMORY!E22").Interior.Color = IIf(mVistaMem = VISTA_HEX, COL_ACTIVO, COL_BOTON)
-    Range("MEMORY!F22").Interior.Color = IIf(mVistaMem = VISTA_BIN, COL_ACTIVO, COL_BOTON)
-    Range("MEMORY!G22").Interior.Color = IIf(mVistaMem = VISTA_DEC, COL_ACTIVO, COL_BOTON)
-    Range("MEMORY!C23").Value = "PC=cyan  MAR=verde"
-    Range("MEMORY!E23").Value = "CiclarVistaMem"
+    
+    ' Resaltar el boton Shape activo (dorado) y los inactivos (gris oscuro)
+    Dim wsMem As Worksheet
+    Set wsMem = ThisWorkbook.Worksheets("MEMORY")
+    Dim btnNombres As Variant
+    Dim btnVistas As Variant
+    Dim idx As Long
+    Dim shpBtn As Shape
+    btnNombres = Array("btnMemHEX", "btnMemBIN", "btnMemDEC")
+    btnVistas = Array(VISTA_HEX, VISTA_BIN, VISTA_DEC)
+    For idx = 0 To 2
+        Set shpBtn = Nothing
+        Set shpBtn = wsMem.Shapes(CStr(btnNombres(idx)))
+        If Not shpBtn Is Nothing Then
+            If CLng(btnVistas(idx)) = mVistaMem Then
+                shpBtn.Fill.ForeColor.RGB = COL_ACTIVO
+                shpBtn.TextFrame2.TextRange.Font.Fill.ForeColor.RGB = RGB(0, 0, 0)
+            Else
+                shpBtn.Fill.ForeColor.RGB = RGB(89, 89, 89)
+                shpBtn.TextFrame2.TextRange.Font.Fill.ForeColor.RGB = RGB(255, 255, 255)
+            End If
+        End If
+    Next idx
     On Error GoTo 0
 
     Application.ScreenUpdating = True
@@ -572,6 +592,7 @@ Private Sub LimpiarResaltadoCamino()
     Range("rngMDR").Interior.ColorIndex = xlNone
     Range("rngAX").Interior.ColorIndex = xlNone
     Range("rngBX").Interior.ColorIndex = xlNone
+    Range("rngTemp").Interior.ColorIndex = xlNone
     On Error GoTo 0
 End Sub
 
@@ -745,32 +766,45 @@ End Sub
 Private Sub PulirHojaMEMORY()
     Dim ws As Worksheet
     Dim c As Long
+    Dim shp As Shape
     Set ws = ThisWorkbook.Worksheets("MEMORY")
 
-    ws.Range("A1").Value = "Memoria principal  00h - FFh"
+    ' ==========================================
+    ' TITULO Y SUBTITULO
+    ' ==========================================
+    ws.Range("A1").Value = "Memoria Principal RAM  (256 x 8 bits)"
     ws.Range("A1").Font.Size = 18
     ws.Range("A1").Font.Bold = True
     ws.Range("A1").Font.Color = COL_TITULO
 
-    ws.Range("A2").Value = "256 celdas x 8 bits. Dir = fila*16+col. Azul=codigo 00h-7Fh | Naranja=datos 80h-FFh | Cyan=PC | Verde=MAR"
+    ws.Range("A2").Value = "Direccion = fila*16 + col  |  Azul = Codigo (00h-7Fh)  |  Naranja = Datos (80h-FFh)  |  Cyan = PC  |  Verde = MAR"
     ws.Range("A2").Font.Size = 9
     ws.Range("A2").Font.Italic = True
     ws.Range("A2").Font.Color = RGB(89, 89, 89)
 
+    ' ==========================================
+    ' ENCABEZADOS DE COLUMNA (0 a F)
+    ' ==========================================
     ws.Range("A4").Value = ""
+    ws.Range("A4").Interior.Color = COL_HEADER
     For c = 0 To 15
         ws.Cells(4, c + 2).Value = Hex$(c)
         ws.Cells(4, c + 2).Font.Bold = True
         ws.Cells(4, c + 2).Font.Name = "Consolas"
+        ws.Cells(4, c + 2).Font.Size = 10
         ws.Cells(4, c + 2).HorizontalAlignment = xlCenter
         ws.Cells(4, c + 2).Interior.Color = COL_HEADER
         ws.Cells(4, c + 2).Font.Color = RGB(255, 255, 255)
     Next c
 
+    ' ==========================================
+    ' ENCABEZADOS DE FILA (0x0_, 0x1_, ... 0xF_)
+    ' ==========================================
     For c = 0 To 15
-        ws.Cells(5 + c, 1).Value = Hex$(c)
+        ws.Cells(5 + c, 1).Value = Hex$(c) & "_"
         ws.Cells(5 + c, 1).Font.Bold = True
         ws.Cells(5 + c, 1).Font.Name = "Consolas"
+        ws.Cells(5 + c, 1).Font.Size = 10
         ws.Cells(5 + c, 1).HorizontalAlignment = xlCenter
         If c <= 7 Then
             ws.Cells(5 + c, 1).Interior.Color = COL_CODIGO
@@ -779,27 +813,105 @@ Private Sub PulirHojaMEMORY()
         End If
     Next c
 
+    ' ==========================================
+    ' CUADRICULA RAM 16x16
+    ' ==========================================
     ws.Range("rngRAM").Font.Name = "Consolas"
     ws.Range("rngRAM").Font.Size = 9
     ws.Range("rngRAM").HorizontalAlignment = xlCenter
     ws.Range("rngRAM").Borders.LineStyle = xlContinuous
     ws.Range("rngRAM").Borders.Color = RGB(180, 180, 180)
 
-    EstiloBotonCelda ws.Range("E22"), "HEX"
-    EstiloBotonCelda ws.Range("F22"), "BIN"
-    EstiloBotonCelda ws.Range("G22"), "DEC"
+    ' ==========================================
+    ' LEYENDA DE SEGMENTACION (fila 22)
+    ' ==========================================
+    ws.Range("A22").Value = "Codigo"
     ws.Range("A22").Font.Bold = True
+    ws.Range("A22").Interior.Color = COL_CODIGO
+    ws.Range("B22").Value = "00h-7Fh"
+    ws.Range("B22").Font.Size = 9
+
+    ws.Range("A23").Value = "Datos"
     ws.Range("A23").Font.Bold = True
+    ws.Range("A23").Interior.Color = COL_DATOS
+    ws.Range("B23").Value = "80h-FFh"
+    ws.Range("B23").Font.Size = 9
+
+    ws.Range("C22").Value = "PC"
     ws.Range("C22").Font.Bold = True
+    ws.Range("C22").Interior.Color = COL_PC_MEM
+    ws.Range("D22").Value = "Cyan"
+    ws.Range("D22").Font.Size = 9
+
+    ws.Range("C23").Value = "MAR"
+    ws.Range("C23").Font.Bold = True
+    ws.Range("C23").Interior.Color = COL_MAR
+    ws.Range("D23").Value = "Verde"
+    ws.Range("D23").Font.Size = 9
+
+    ' ==========================================
+    ' SELECTOR DE FORMATO: Botones Nativos (Shapes)
+    ' ==========================================
+    ws.Range("F22").Value = "Vista:"
+    ws.Range("F22").Font.Bold = True
+    ws.Range("F22").Font.Size = 11
+
+    ' Indicador de vista activa
     ws.Range("rngVistaMem").Font.Name = "Consolas"
     ws.Range("rngVistaMem").Font.Bold = True
+    ws.Range("rngVistaMem").Font.Size = 12
+    ws.Range("rngVistaMem").HorizontalAlignment = xlCenter
+    ws.Range("rngVistaMem").Interior.Color = RGB(255, 250, 205)
+    ws.Range("rngVistaMem").Borders.LineStyle = xlContinuous
 
+    ' Crear o reposicionar Shapes para HEX / BIN / DEC
+    CrearBotonMemoria ws, "btnMemHEX", "HEX", ws.Range("H22"), "VistaMemHEX"
+    CrearBotonMemoria ws, "btnMemBIN", "BIN", ws.Range("I22"), "VistaMemBIN"
+    CrearBotonMemoria ws, "btnMemDEC", "DEC", ws.Range("J22"), "VistaMemDEC"
+
+    ' ==========================================
+    ' ANCHOS DE COLUMNA
+    ' ==========================================
     ws.Columns("A").ColumnWidth = 6
     Dim col As Long
     For col = 2 To 17
-        ws.Columns(col).ColumnWidth = 5.5
+        ws.Columns(col).ColumnWidth = 10
     Next col
     ws.Rows("1").RowHeight = 26
+    ws.Rows("4").RowHeight = 20
+End Sub
+
+' Crea o reposiciona un boton nativo (Shape) en la hoja MEMORY para cambiar formato.
+Private Sub CrearBotonMemoria(ByVal ws As Worksheet, ByVal nombre As String, _
+                              ByVal texto As String, ByVal celda As Range, _
+                              ByVal macro As String)
+    Dim shp As Shape
+    On Error Resume Next
+    Set shp = ws.Shapes(nombre)
+    On Error GoTo 0
+
+    If shp Is Nothing Then
+        Set shp = ws.Shapes.AddShape(msoShapeRoundedRectangle, _
+                    celda.Left + 2, celda.Top + 2, _
+                    celda.Width - 4, celda.Height - 4)
+        shp.Name = nombre
+        shp.TextFrame2.TextRange.Text = texto
+        shp.TextFrame2.TextRange.Font.Size = 11
+        shp.TextFrame2.TextRange.Font.Bold = msoTrue
+        shp.TextFrame2.TextRange.Font.Fill.ForeColor.RGB = RGB(255, 255, 255)
+        shp.TextFrame2.TextRange.ParagraphFormat.Alignment = msoAlignCenter
+        shp.TextFrame2.VerticalAnchor = msoAnchorMiddle
+        shp.OnAction = macro
+    Else
+        shp.Top = celda.Top + 2
+        shp.Left = celda.Left + 2
+        shp.Width = celda.Width - 4
+        shp.Height = celda.Height - 4
+    End If
+
+    shp.Fill.ForeColor.RGB = RGB(89, 89, 89)
+    shp.Line.ForeColor.RGB = RGB(60, 60, 60)
+    shp.Line.Weight = 1
 End Sub
 
 Private Sub PulirHojaPROGRAM()
@@ -812,7 +924,7 @@ Private Sub PulirHojaPROGRAM()
     ws.Range("A1").Font.Color = COL_TITULO
     ws.Range("A1").Interior.Color = RGB(232, 240, 254)
     
-    ws.Range("B1").Value = "LOAD escribe esto en la RAM. No requiere variables externas."
+    ws.Range("B1").Value = "LOAD escribe la Columna A en RAM."
     ws.Range("B1").Font.Size = 9
     ws.Range("B1").Font.Italic = True
 
@@ -822,7 +934,7 @@ Private Sub PulirHojaPROGRAM()
     rng.Font.Size = 12
     rng.Borders.LineStyle = xlContinuous
     
-    ' Escribir el programa Demo (Opcion 1: Puro Registro)
+    ' Escribir el programa Demo Principal (Multiplicacion)
     rng.ClearContents
     rng.Cells(1, 1).Value = "MOV AX, 00h"
     rng.Cells(2, 1).Value = "MOV BX, 03h"
@@ -833,9 +945,40 @@ Private Sub PulirHojaPROGRAM()
     rng.Cells(7, 1).Value = "JMP 04h"
     rng.Cells(8, 1).Value = "STORE [82h], AX"
     rng.Cells(9, 1).Value = "HLT"
+    
+    ' Escribir el programa Alternativo (Fibonacci) en la columna E (Como backup)
+    ws.Range("E1").Value = "BACKUP: Serie de Fibonacci hasta limite de 8 bits (233)"
+    ws.Range("E1").Font.Bold = True
+    ws.Range("E1").Interior.Color = RGB(255, 230, 204)
+    ws.Range("E2").Value = "Si te lo piden, copia este codigo y pegalo en la Columna A."
+    ws.Range("E2").Font.Italic = True
+    ws.Range("E2").Font.Size = 9
+    
+    ws.Range("E4").Value = "MOV AX, 00h"
+    ws.Range("E5").Value = "STORE [80h], AX"
+    ws.Range("E6").Value = "MOV AX, 01h"
+    ws.Range("E7").Value = "STORE [81h], AX"
+    ws.Range("E8").Value = "LOAD AX, [80h]"
+    ws.Range("E9").Value = "LOAD BX, [81h]"
+    ws.Range("E10").Value = "ADD AX, BX"
+    ws.Range("E11").Value = "JC 18h"
+    ws.Range("E12").Value = "STORE [82h], AX"
+    ws.Range("E13").Value = "STORE [81h], AX"
+    ws.Range("E14").Value = "MOV AX, BX"
+    ws.Range("E15").Value = "STORE [80h], AX"
+    ws.Range("E16").Value = "JMP 08h"
+    ws.Range("E17").Value = "HLT"
+    
+    ws.Range("E18:E24").ClearContents
+    
+    ws.Range("E4:E17").Font.Name = "Consolas"
+    ws.Range("E4:E17").Font.Size = 11
+    ws.Range("E4:E17").Borders.LineStyle = xlContinuous
+    ws.Range("E4:E17").Interior.Color = RGB(245, 245, 245)
     On Error GoTo 0
     
-    ws.Columns("A").ColumnWidth = 72
+    ws.Columns("A").ColumnWidth = 30
+    ws.Columns("E").ColumnWidth = 30
 End Sub
 
 Private Sub PulirHojaLOG()
@@ -892,6 +1035,26 @@ Private Sub PulirHojaISA()
     ws.Columns("E").ColumnWidth = 36
     ws.Columns("F").ColumnWidth = 14
     ws.Columns("G").ColumnWidth = 12
+    
+    ' Inyectar JC al final de la tabla si no existe
+    Dim r As Long
+    Dim foundJC As Boolean
+    foundJC = False
+    For r = 5 To 30
+        If ws.Cells(r, 1).Value = "JC" Then foundJC = True
+    Next r
+    If Not foundJC Then
+        r = ws.Cells(ws.Rows.Count, 1).End(xlUp).Row + 1
+        ws.Cells(r, 1).Value = "JC"
+        ws.Cells(r, 2).Value = "98"
+        ws.Cells(r, 3).Value = "10011000"
+        ws.Cells(r, 4).Value = "2"
+        ws.Cells(r, 5).Value = "Jump if Carry (Salta si hay desbordamiento)"
+        ws.Cells(r, 6).Value = "IF CF=1 PC=dir"
+        ws.Cells(r, 7).Value = "- - -"
+        ws.Range(ws.Cells(r, 1), ws.Cells(r, 7)).Borders.LineStyle = xlContinuous
+    End If
+    
     On Error GoTo 0
 End Sub
 
@@ -908,22 +1071,21 @@ Private Sub PulirHojaREADME()
     ws.Range("A3").Value = "1. Habilitar macros al abrir el .xlsm (los botones son Formas Excel, no scripts)"
     ws.Range("A4").Value = "2. Si faltan botones STEP/RUN/...: Inmediato -> CrearBotonesForma  y Guardar el libro"
     ws.Range("A5").Value = "3. (Opcional defensa) PulirInterfaz  <- tipografia, pipeline, diagramas"
-    ws.Range("A6").Value = "4. Hoja PROGRAM ya tiene el demo. Boton LOAD (Forma) o macro DoLoad"
-    ws.Range("A7").Value = "5. Sembrar datos: SembrarDatosDemo   (o WriteMem &H80,3 / &H81,4 / &H82,0)"
-    ws.Range("A8").Value = "6. Demo: DoReset -> STEP varias veces, o RUN con retardo 200 ms"
-    ws.Range("A9").Value = "7. Mirar CPU: pipeline FETCH/DECODE/EXECUTE/STORE + camino PC->MAR->MDR->IR"
-    ws.Range("A10").Value = "8. Mirar MEMORY: zona codigo (azul) vs datos (naranja); PC cyan, MAR verde"
+    ws.Range("A6").Value = "4. Hoja PROGRAM ya tiene el demo (multiplicacion 3x4 en registros). Boton LOAD o macro DoLoad"
+    ws.Range("A7").Value = "5. Demo: LOAD -> RESET -> STEP varias veces, o RUN con retardo 200 ms"
+    ws.Range("A8").Value = "6. Mirar CPU: pipeline FETCH/DECODE/EXECUTE/STORE + camino PC->MAR->MDR->IR"
+    ws.Range("A9").Value = "7. Mirar MEMORY: zona codigo (azul) vs datos (naranja); PC cyan, MAR verde"
+    ws.Range("A10").Value = "8. Cambiar formato de memoria: botones HEX / BIN / DEC en la hoja MEMORY"
     ws.Range("A11").Value = "9. Mirar LOG: una fila por micro-operacion (cronologico)"
-    ws.Range("A12").Value = "10. Vistas memoria: VistaMemHEX / VistaMemBIN / VistaMemDEC / CiclarVistaMem"
-    ws.Range("A13").Value = "11. Diagramas: docs/img/datapath-cpu.png y mapa-memoria.png (si estan junto al libro)"
+    ws.Range("A12").Value = "10. Diagramas: docs/img/datapath-cpu.png y mapa-memoria.png (si estan junto al libro)"
 
-    ws.Range("A15").Value = "Macros de control"
-    ws.Range("A15").Font.Bold = True
-    ws.Range("A16").Value = "DoStep | DoRun | DoPause | DoReset | DoLoad | RefreshUI | PulirInterfaz | CrearBotonesForma"
-    ws.Range("A16").Font.Name = "Consolas"
+    ws.Range("A14").Value = "Macros de control"
+    ws.Range("A14").Font.Bold = True
+    ws.Range("A15").Value = "DoStep | DoRun | DoPause | DoReset | DoLoad | RefreshUI | PulirInterfaz"
+    ws.Range("A15").Font.Name = "Consolas"
 
-    ws.Range("A18").Value = "Criterio de interfaz (rubrica): fase iluminada, flujo en tiempo real, Formas de control, log detallado."
-    ws.Range("A18").Font.Italic = True
+    ws.Range("A17").Value = "Criterio de interfaz (rubrica): fase iluminada, flujo en tiempo real, Formas de control, log detallado."
+    ws.Range("A17").Font.Italic = True
     ws.Columns("A").ColumnWidth = 100
     On Error GoTo 0
 End Sub

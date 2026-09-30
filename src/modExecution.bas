@@ -104,6 +104,9 @@ Public Sub PasoExecute()
         Case OP_JNZ
             If modFlags.ZF = 0 Then SetPC mOperando
             mEscribeRegistro = False
+        Case OP_JC
+            If modFlags.CF = 1 Then SetPC mOperando
+            mEscribeRegistro = False
         Case OP_HLT
             DetenerCPU
             mEscribeRegistro = False
