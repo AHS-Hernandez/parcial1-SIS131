@@ -1,277 +1,264 @@
-# Simulador de CPU von Neumann / x86 de 8 bits
+# Simulador de Arquitectura CPU 8-Bits
 
-Simulador interactivo y visual de CPU con arquitectura von Neumann / x86 de 8 bits y Memoria Principal, desarrollado en **Microsoft Excel + VBA (`.xlsm`)** para la materia **Arquitectura de Computadoras (SIS-131)** de la Universidad Católica Boliviana "San Pablo".
+![Excel](https://img.shields.io/badge/Excel-2016%2B-green.svg)
+![VBA](https://img.shields.io/badge/VBA-Enabled-blue.svg)
+![Arquitectura](https://img.shields.io/badge/Arquitectura-Von%20Neumann-orange.svg)
+![ISA](https://img.shields.io/badge/ISA-Custom%208--bit-blueviolet.svg)
 
-**Repositorio:** [AHS-Hernandez/parcial1-SIS131](https://github.com/AHS-Hernandez/parcial1-SIS131)  
-**Tablero de Proyecto:** [Backlog · parcial1-SIS131](https://github.com/users/AHS-Hernandez/projects/3)  
-**Responsable:** Adriana Hernandez (adriana.hernandez@ucb.edu.bo)
+## 📋 Descripción General
+Simulador interactivo de arquitectura de CPU de 8 bits desarrollado íntegramente en Microsoft Excel utilizando Visual Basic for Applications (VBA). Esta herramienta educativa permite visualizar el funcionamiento interno de un procesador y su ruta de datos (Datapath) mediante la ejecución paso a paso de instrucciones en lenguaje ensamblador personalizado.
+
+El simulador implementa una **Arquitectura Von Neumann** clásica, donde las instrucciones y los datos comparten el mismo espacio de memoria, facilitando la comprensión del ciclo de máquina básico: *Fetch*, *Decode*, *Execute* y *Store*.
+
+## 📑 Tabla de Contenidos
+1. [Introducción](#1-introducción)
+2. [Fundamentos Teóricos](#2-fundamentos-teóricos)
+3. [Arquitectura del Simulador](#3-arquitectura-del-simulador)
+4. [Componentes Implementados (Software)](#4-componentes-implementados-software)
+5. [Guía de Uso](#5-guía-de-uso)
+6. [Ejemplos Prácticos](#6-ejemplos-prácticos)
+7. [Apéndices (ISA Completo)](#7-apéndices)
 
 ---
 
-## 📋 Propósito del Simulador
+## 1. Introducción
 
-El propósito del simulador es modelar y visualizar en tiempo real el funcionamiento interno del hardware y el ciclo completo de instrucción (**Fetch → Decode → Execute → Store**) de un procesador de 8 bits. Permite inspeccionar paso a paso el movimiento de datos entre registros, la memoria RAM y la ALU, facilitando la comprensión del flujo de ejecución a nivel de micro-operaciones de máquina.
+### 1.1 Objetivos del Proyecto
+* **Educación Visual:** Proveer una representación gráfica en tiempo real de cómo los datos fluyen a través de los buses internos de una CPU.
+* **Comprensión del Ciclo Máquina:** Desglosar la ejecución de un programa en micro-operaciones observables.
+* **Gestión de Memoria:** Ilustrar la convivencia de Código y Datos en una memoria unificada (Von Neumann).
+* **Accesibilidad:** Utilizar una plataforma universal (Excel) para eliminar la fricción de instalación de entornos complejos.
+
+### 1.2 Características Principales
+| Característica | Descripción |
+|---|---|
+| **Arquitectura** | Von Neumann (Memoria Unificada de 256 bytes) |
+| **Palabra / Bus** | 8 bits (Valores `00h` a `FFh`) |
+| **Registros ALU** | AX, BX (Propósito general) |
+| **Registros Control** | PC, IR, MAR, MDR, Registro Temporal |
+| **Banderas (Flags)**| Zero (ZF), Carry (CF), Sign (SF) |
+| **Plataforma** | MS Excel + Macros VBA orientadas a eventos |
 
 ---
 
-## 🧮 Programa Demostrativo y Traza de Ejecución
+## 2. Fundamentos Teóricos
 
-El simulador incluye de fábrica la ejecución del algoritmo de **Multiplicación por Sumas Sucesivas** ($3 \times 4 = 12$).
+### 2.1 Unidad de Control (U.C.)
+La Unidad de Control actúa como el cerebro del procesador, orquestando las señales.
+* **PC (Program Counter):** Apunta a la siguiente dirección de memoria a leer.
+* **IR (Instruction Register):** Almacena el *Opcode* de la instrucción que se está decodificando.
+* **MAR (Memory Address Register):** Retiene la dirección de memoria a la que la CPU desea acceder.
+* **MDR (Memory Data Register):** Actúa como búfer (puente) para los datos que entran o salen de la memoria.
 
-### 1. Datos de Entrada y Salida
-- **`RAM[80h]`** = `03h` (Contador de iteraciones $N$).
-- **`RAM[81h]`** = `04h` (Multiplicando $M$).
-- **`RAM[82h]`** = `0Ch` (Resultado final del Producto = 12 en decimal).
+```mermaid
+graph TD
+    subgraph CPU [Unidad Central de Procesamiento]
+        UC[Unidad de Control] --> |Señales de Control| ALU
+        ALU[Unidad Aritmético-Lógica] <--> REGS[(Banco de Registros<br/>AX, BX, Banderas)]
+        UC <--> PC[Program Counter]
+        UC <--> IR[Instruction Register]
+        UC <--> MAR[MAR]
+        UC <--> MDR[MDR]
+    end
+    subgraph RAM [Memoria Principal]
+        MEM[(Memoria RAM 256 Bytes<br/>Arquitectura Von Neumann)]
+    end
+    MAR -->|Bus de Direcciones| MEM
+    MDR <-->|Bus de Datos| MEM
+    IR -.->|Decodifica Opcode| UC
+```
 
-### 2. Código en Ensamblador (`Hoja PROGRAM`)
+### 2.2 Unidad Aritmético-Lógica (ALU)
+Realiza las operaciones matemáticas y lógicas. Actualiza dinámicamente tres banderas fundamentales:
+* **ZF (Zero Flag):** Se activa (`1`) si el resultado de la operación es cero. Utilizado por `JZ` y `JNZ`.
+* **CF (Carry Flag):** Se activa (`1`) si ocurre desbordamiento (*overflow* de 8 bits, > 255). Utilizado por `JC`.
+* **SF (Sign Flag):** Se activa (`1`) si el bit más significativo (MSB) indica un número negativo en complemento a 2.
+
+### 2.3 Arquitectura Von Neumann y Memoria
+El sistema cuenta con una matriz de **256 celdas de 1 byte**. En nuestra interfaz visual, la memoria está segmentada lógicamente mediante colores, pero físicamente comparte el mismo bus:
+* **Zona de Código (Azul):** `00h` a `7Fh`.
+* **Zona de Datos (Naranja):** `80h` a `FFh`.
+
+### 2.4 Ciclo de Instrucción (Fases de Máquina)
+El simulador respeta rigurosamente las 4 fases del ciclo máquina para procesar cualquier instrucción. Así es como programamos la transición de estados dentro del código VBA (`modControlUnit.bas`):
+
+```mermaid
+flowchart TD
+    A((Inicio Ciclo)) --> B[FETCH]
+    B --> C{¿La instrucción<br/>requiere un operando<br/>de 2do byte?}
+    C -->|No (1 Byte)| D[DECODE]
+    C -->|Sí (2 Bytes)| B2[FETCH<br/>del Operando]
+    B2 --> D
+    D --> E[EXECUTE]
+    E --> F{¿Se debe guardar<br/>un resultado?}
+    F -->|Sí| G[STORE<br/>Write-back]
+    F -->|No| H((Fin Ciclo))
+    G --> H
+    H --> A
+    E -.-> |Si es HLT| Z((Detener CPU))
+    
+    classDef fase fill:#e1f5fe,stroke:#01579b,stroke-width:2px;
+    class B,B2,D,E,G fase;
+```
+
+---
+
+## 3. Arquitectura del Simulador
+
+El software está diseñado bajo un modelo Vista-Controlador descentralizado dentro de Excel:
+
+1. **Capa de Presentación (Hojas):**
+   * `CPU`: Dashboard principal. Muestra registros, datapath animado y botones de control.
+   * `MEMORY`: Visualizador dinámico de RAM. Permite cambiar vistas (HEX / BIN / Ensamblador) con un solo clic gracias a controles nativos Shape. A continuación se detalla cómo programamos esta interactividad visual:
+   
+   ```mermaid
+   sequenceDiagram
+       actor Usuario
+       participant MEMORY as Hoja MEMORY (UI)
+       participant VBA as modUI.bas (VBA)
+       participant RAM as Arreglo RAM(0-255)
+       
+       Usuario->>MEMORY: Clic en botón [DEC/Mnem]
+       MEMORY->>VBA: Dispara macro VistaMemDEC()
+       VBA->>VBA: Establece estado mVistaMem = VISTA_DEC
+       VBA->>RAM: Extrae bytes crudos
+       loop Por cada celda (00h a FFh)
+           alt Es Zona de Código (00h-7Fh)?
+               VBA->>VBA: Llama a DecodeByte(byte)
+               VBA-->>MEMORY: Renderiza Mnemónico (Ej: 'MOV')
+           else Es Zona de Datos (80h-FFh)?
+               VBA-->>MEMORY: Renderiza Decimal (Ej: '12')
+           end
+       end
+       VBA->>MEMORY: Resalta botón [DEC/Mnem] en dorado
+   ```
+
+   * `PROGRAM`: Editor de código ensamblador (sintaxis humana) listo para ser compilado/cargado en RAM.
+   * `LOG`: Registro histórico detallado de cada micro-operación ejecutada.
+
+2. **Capa de Lógica (Módulos VBA):** La CPU simulada opera bajo un ciclo estricto de 4 fases por instrucción:
+   * **FETCH:** Traslada la instrucción de Memoria(PC) -> MAR -> MDR -> IR. Si la instrucción requiere operando, realiza un segundo *Fetch*.
+   * **DECODE:** Traduce el byte crudo (ej. `B8h`) a la micro-operación interna.
+   * **EXECUTE:** La ALU realiza el trabajo pesado o se resuelven las condiciones de salto.
+   * **STORE:** Guarda resultados (Write-back) en los registros o en memoria vía `MDR`.
+
+---
+
+## 4. Componentes Implementados (Software)
+
+El proyecto consta de **~1,200 líneas de código VBA** organizadas meticulosamente:
+
+| Módulo | Descripción Técnica |
+|---|---|
+| `modUI.bas` | Renderizado, coloreado dinámico, gestión de botones Shape, traductor Hex/Bin/Mnemónico. |
+| `modControlUnit.bas` | Ciclo global del reloj, secuenciador de Fases (Fetch, Decode), orquestador principal. |
+| `modExecution.bas` | Lógica de la ALU, saltos incondicionales y condicionales (actualización de variables internas). |
+| `modISA.bas` | Diccionario de opcodes (Mnemónico ↔ Binario/Hex) y metadatos de las instrucciones (ej. conteo de bytes). |
+| `modMemory.bas` | Arreglo unidimensional `RAM(0 to 255)`. Lógica segura de lectura/escritura (ReadMem/WriteMem). |
+| `modRegisters.bas` | Variables encapsuladas para `PC`, `MAR`, `MDR`, `IR`, `AX`, `BX` con validaciones de 8 bits (0-255). |
+| `modFlags.bas` | Funciones matemáticas para establecer ZF, CF, y SF tras el paso por la ALU. |
+
+---
+
+## 5. Guía de Uso
+
+### 5.1 Configuración Inicial
+1. Abrir `SimuladorCPU.xlsm`.
+2. **Habilitar Macros** (Requisito estricto, el simulador depende de VBA).
+3. (Opcional) Si la interfaz gráfica presenta anomalías, presionar `ALT+F11`, ir a la ventana Inmediato y ejecutar `PulirInterfaz`.
+
+### 5.2 Ciclo de Ejecución Básica
+1. Dirigirse a la hoja `PROGRAM` y escribir (o mantener) un código válido.
+2. Ir a la hoja `CPU` y hacer clic en el botón verde **LOAD** (Carga la RAM y resetea el PC a 0).
+3. Controlar la CPU con:
+   * **STEP (Paso a Paso):** Avanza una micro-operación. Ideal para observar el bus de datos en tiempo real.
+   * **RUN:** Ejecución continua (delay de 200ms) hasta encontrar la instrucción `HLT`.
+   * **PAUSE:** Detiene un `RUN` en progreso.
+   * **RESET:** Vacía los registros y regresa el `PC` a 0.
+
+---
+
+## 6. Ejemplos Prácticos
+
+El simulador se entrega con dos rutinas avanzadas precargadas en la hoja `PROGRAM`:
+
+### 6.1 Multiplicación por sumas sucesivas (Loop con JZ)
+Demuestra iteración controlada utilizando la bandera Zero (ZF). Calcula 3 x 4 = 12 (`0Ch`).
 ```assembly
-00h: MOV AX, 00h     ; Inicializar Producto AX ← 0
-02h: LOAD BX, [80h]  ; LOOP: BX ← N
-04h: CMP BX, 00h     ; ¿N == 0?
-06h: JZ 12h          ; Si ZF=1, saltar a FIN (12h)
-08h: LOAD BX, [81h]  ; BX ← M (4)
-0Ah: ADD AX, BX      ; AX ← AX + M
-0Bh: LOAD BX, [80h]  ; BX ← N
-0Dh: DEC BX          ; N ← N - 1
-0Eh: STORE [80h], BX ; Guardar nuevo N en RAM[80h]
-10h: JMP 02h         ; Volver al LOOP
-12h: STORE [82h], AX ; FIN: Guardar producto final en RAM[82h]
-14h: HLT             ; Detener la CPU
+MOV AX, 00h       ; AX = Acumulador
+MOV BX, 03h       ; BX = Multiplicador
+CMP BX, 00h       ; Validación inicial
+JZ 0Dh            ; Si BX=0, fin
+ADD AX, 04h       ; AX = AX + Multiplicando
+DEC BX            ; BX--
+JMP 04h           ; Repetir bucle
+STORE [82h], AX   ; Guardar resultado
+HLT
 ```
 
-### 3. Traza Matemáticamente Verificada (Paso a Paso)
+#### Análisis y Traza de Registros
+A continuación se presenta la traza de ejecución de las primeras iteraciones del ciclo máquina, demostrando cómo fluyen los datos por el datapath:
 
-| Iteración / Evento | Dirección PC | Instrucción | AX (Acumulador) | BX (Trabajo) | N (`RAM[80h]`) | Producto (`RAM[82h]`) | ZF | CF | SF | Estado CPU |
-|---|:---:|---|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|
-| **Inicio** | `00h` | `MOV AX, 00h` | `00h` | `00h` | `03h` | `00h` | 0 | 0 | 0 | RUNNING |
-| **Bucle 1 (Inicio)** | `02h` | `LOAD BX, [80h]` | `00h` | `03h` | `03h` | `00h` | 0 | 0 | 0 | RUNNING |
-| **Bucle 1 (Evaluar)** | `04h` | `CMP BX, 00h` | `00h` | `03h` | `03h` | `00h` | 0 | 0 | 0 | RUNNING |
-| **Bucle 1 (Suma)** | `0Ah` | `ADD AX, BX` | `04h` | `04h` | `03h` | `00h` | 0 | 0 | 0 | RUNNING |
-| **Bucle 1 (Decrementar)**| `0Dh` | `DEC BX` | `04h` | `02h` | `02h` | `00h` | 0 | 0 | 0 | RUNNING |
-| **Bucle 2 (Inicio)** | `02h` | `LOAD BX, [80h]` | `04h` | `02h` | `02h` | `00h` | 0 | 0 | 0 | RUNNING |
-| **Bucle 2 (Suma)** | `0Ah` | `ADD AX, BX` | `08h` | `04h` | `02h` | `00h` | 0 | 0 | 0 | RUNNING |
-| **Bucle 2 (Decrementar)**| `0Dh` | `DEC BX` | `08h` | `01h` | `01h` | `00h` | 0 | 0 | 0 | RUNNING |
-| **Bucle 3 (Inicio)** | `02h` | `LOAD BX, [80h]` | `08h` | `01h` | `01h` | `00h` | 0 | 0 | 0 | RUNNING |
-| **Bucle 3 (Suma)** | `0Ah` | `ADD AX, BX` | `0Ch` (12) | `04h` | `01h` | `00h` | 0 | 0 | 0 | RUNNING |
-| **Bucle 3 (Decrementar)**| `0Dh` | `DEC BX` | `0Ch` | `00h` | `00h` | `00h` | **1** | 0 | 0 | RUNNING |
-| **Fin del Bucle** | `04h` | `CMP BX, 00h` | `0Ch` | `00h` | `00h` | `00h` | **1** | 0 | 0 | RUNNING |
-| **Salto Condicional** | `06h` | `JZ 12h` | `0Ch` | `00h` | `00h` | `00h` | 1 | 0 | 0 | RUNNING |
-| **Escritura Final** | `12h` | `STORE [82h], AX` | `0Ch` | `00h` | `00h` | **`0Ch`** | 1 | 0 | 0 | RUNNING |
-| **Parada** | `14h` | `HLT` | `0Ch` | `00h` | `00h` | `0Ch` | 1 | 0 | 0 | **HALTED** |
+| Paso | Instrucción | Fase Actual | PC | AX | BX | ZF | Comentario / Micro-operación |
+|---|---|---|---|---|---|---|---|
+| 1 | `MOV AX, 00h` | EXECUTE | `02h` | **`00h`** | `00h` | `0` | Inicializa acumulador AX a 0. |
+| 2 | `MOV BX, 03h` | EXECUTE | `04h` | `00h` | **`03h`** | `0` | Inicializa multiplicador BX a 3. |
+| 3 | `CMP BX, 00h` | EXECUTE | `06h` | `00h` | `03h` | `0` | Resta interna BX - 0. Resultado > 0. |
+| 4 | `JZ 0Dh` | EXECUTE | `08h` | `00h` | `03h` | `0` | No salta (ZF=0). PC sigue secuencial. |
+| 5 | `ADD AX, 04h` | EXECUTE | `0Ah` | **`04h`** | `03h` | `0` | 1ra iteración: AX = AX + 4. |
+| 6 | `DEC BX` | EXECUTE | `0Bh` | `04h` | **`02h`** | `0` | 1ra iteración: Multiplicador decrece a 2. |
+| 7 | `JMP 04h` | EXECUTE | **`04h`** | `04h` | `02h` | `0` | Salto incondicional al inicio del bucle. |
+| 8 | `CMP BX, 00h` | EXECUTE | `06h` | `04h` | `02h` | `0` | Comprueba BX (2) contra 0. |
+| ... | *...* | *...* | *...* | *...* | *...* | *...* | *... Continúa el bucle ...* |
+| 19| `CMP BX, 00h` | EXECUTE | `06h` | `0Ch` | `00h` | **`1`** | Tras la última iteración, BX llega a 0. ¡ZF=1! |
+| 20| `JZ 0Dh` | EXECUTE | **`0Dh`** | `0Ch` | `00h` | `1` | Condición cumplida. PC salta fuera del bucle. |
+| 21| `STORE [82], AX`| STORE | `0Fh` | `0Ch` | `00h` | `1` | El resultado final (12 / `0Ch`) se va a RAM. |
+| 22| `HLT` | EXECUTE | `10h` | `0Ch` | `00h` | `1` | CPU Detenida exitosamente. |
 
----
-
-## 🚀 Guía de Instalación y Manual de Usuario
-
-### 1. Requisitos e Instalación
-1. **Requisitos de Software**: Microsoft Excel 2016 o superior (Windows / macOS) con soporte para macros VBA.
-2. **Abrir el Ejecutable**: Descargar y abrir el archivo [`SimuladorCPU.xlsm`](SimuladorCPU.xlsm) ubicado en la raíz del repositorio.
-3. **Habilitar Macros**: Al abrir el libro, hacer clic en la barra amarilla superior en **"Habilitar contenido"** o **"Habilitar macros"** para permitir la ejecución de los controles VBA.
-
----
-
-### 2. Manual de Uso de los Controles (Hoja CPU)
-
-| Botón / Control | Función y Comportamiento |
-|---|---|
-| **`LOAD PROGRAM`** | Lee el código fuente ensamblador escrito en la pestaña `PROGRAM`, lo ensambla a bytes hexadecimales y lo carga en el Segmento de Código de la RAM (`00h`–`7Fh`), reiniciando el `PC` a `00h`. |
-| **`STEP`** | Avanza **una micro-operación** a la vez. Resalta con color el componente activo (fase, camino de datos o celda RAM) y actualiza los paneles de registros y banderas. |
-| **`RUN`** | Inicia la ejecución secuencial automática continua a través del bucle FSM sin congelar la interfaz de Excel. |
-| **`PAUSE`** | Detiene la ejecución automática de `RUN` en el sub-paso actual, permitiendo continuar manualmente en modo `STEP`. |
-| **`RESET`** | Restablece los registros (`PC`, `IR`, `MAR`, `MDR`, `AX`, `BX`) y banderas (`ZF`, `CF`, `SF`) a cero, vuelve la fase a `FETCH` y limpia el log. **Mantiene intacta la memoria RAM** para permitir reejecuciones. |
-| **Retardo (`rngDelay`)** | Permite ajustar la velocidad de ejecución del modo `RUN` en milisegundos (por ejemplo, `50 ms` o `200 ms`) para observar la animación gráfica. |
-
----
-
-### 3. Descripción de los Paneles e Interfaz Gráfica
-
-1. **Panel CPU (`Hoja CPU`)**:
-   - **Camino de Datos**: Flecha dinámica que señala la transferencia activa entre `PC → MAR`, `MAR → RAM`, `RAM → MDR` y `MDR → IR`.
-   - **Panel de Registros**: Muestra los valores actuales en formato Hexadecimal (`00h`–`FFh`).
-   - **Panel de Banderas**: Indicadores `1` / `0` de `ZF`, `CF` y `SF`.
-   - **Fase y Micro-op Activa**: Muestra el nombre exacto del paso del reloj (ej. `FETCH: MAR ← PC`).
-2. **Matriz de Memoria (`Hoja MEMORY`)**:
-   - Grilla 16×16 que representa los 256 bytes de la RAM.
-   - Resalta en **naranja** la celda actualmente leída/escrita y en **verde** la dirección apuntada por `MAR`.
-   - Permite alternar la visualización entre formatos **HEX**, **BIN** y **DEC/Mnemónico**.
-3. **Log de Micro-operaciones (`Hoja LOG`)**:
-   - Registra una fila por cada sub-paso con marca de tiempo, fase, micro-operación, registros y banderas.
-
----
-
-## 🏛️ Arquitectura del Sistema
-
-El sistema se compone de **6 hojas de Excel** (interfaz de usuario) y **9 módulos VBA** desacoplados en tres capas funcionales: presentación, control/operación y modelo de datos.
-
-### 📊 Hojas de Excel
-- **CPU**: Panel principal con registros (`PC`, `IR`, `MAR`, `MDR`, `AX`, `BX`), banderas (`ZF`, `CF`, `SF`), estado, fase activa, instrucción actual y botones de control (`STEP`, `RUN`, `PAUSE`, `RESET`, `LOAD PROGRAM`).
-- **MEMORY**: Grilla de 16×16 celdas (256 bytes, `00h`–`FFh`) con colores de zona (Código: `00h`–`7Fh`, Datos: `80h`–`FFh`) y selector de formato (**HEX**, **BIN**, **DEC/Mnemónico**).
-- **PROGRAM**: Formulario de carga de código ensamblador (una instrucción por fila).
-- **LOG**: Registro cronológico de micro-operaciones ejecutadas.
-- **ISA**: Tabla de referencia con la especificación completa de opcodes y formato de instrucciones.
-- **README**: Guía de uso rápido integrada en el libro de cálculo.
-
-### 💾 Modelo de Datos
-- **RAM**: 256 celdas de 8 bits (`0` a `255`), accesibles exclusivamente mediante `ReadMem(address)` y `WriteMem(address, value)`.
-- **Registros**: `PC` (00h–FFh), `IR` (8 bits), `MAR` (00h–FFh), `MDR` (8 bits), `AX` (acumulador), `BX` (base).
-- **Banderas**: `ZF` (Zero), `CF` (Carry/Acarreo), `SF` (Sign/Signo en complemento a 2, bit 7).
-
----
-
-## 🗺️ Mapa de Memoria, Registros, Banderas e ISA Completa
-
-### 1. Mapa de Memoria Principal (RAM)
-- **Rango Total**: `00h` a `FFh` (256 bytes contiguos).
-- **Segmentación Lógica**:
-  - `00h` – `7Fh` (128 bytes): **Segmento de Código** (zona de carga de instrucciones).
-  - `80h` – `EFh` (112 bytes): **Segmento de Datos** (variables, arreglos y almacenamiento).
-  - `F0h` – `FFh` (16 bytes): **Zona de Control y Pila**.
-
-### 2. Registros de la CPU (8 bits)
-- **`PC` (Program Counter)**: Puntero de 8 bits que almacena la dirección de memoria de la siguiente instrucción o byte por procesar.
-- **`IR` (Instruction Register)**: Registro de 8 bits que contiene el código de operación (Opcode) en ejecución.
-- **`MAR` (Memory Address Register)**: Registro de dirección conectado a las líneas de bus para especificar la celda de RAM activa.
-- **`MDR` / `MBR` (Memory Data Register)**: Registro búfer que almacena el byte recién leído o por escribir en la RAM.
-- **`AX` (Acumulador)**: Registro de propósito general de 8 bits para cómputo aritmético-lógico principal.
-- **`BX` (Registro Base)**: Registro de propósito general de 8 bits para operaciones auxiliares y operandos secundarios.
-
-### 3. Registro de Estado (Banderas / Flags)
-- **`ZF` (Zero Flag)**: Se activa en `1` si el resultado de la última operación de la ALU fue igual a cero (`00h`).
-- **`CF` (Carry Flag)**: Se activa en `1` si ocurrió desbordamiento o acarreo sin signo en operaciones aritméticas.
-- **`SF` (Sign Flag)**: Refleja el bit más significativo (bit 7, MSB) del resultado. Si es `1`, el valor es negativo en **complemento a 2** (rango `-128` a `127`).
-
-### 4. Tabla Completa del Conjunto de Instrucciones (ISA)
-
-| Mnemónico / Sintaxis | Opcode | Bytes | Operandos | Acción / Operación | Banderas Afectadas |
-|---|---|---:|---|---|---|
-| `MOV AX, imm` | 10h | 2 | Inmediato | AX ← imm | No cambian |
-| `MOV BX, imm` | 11h | 2 | Inmediato | BX ← imm | No cambian |
-| `MOV AX, BX` | 12h | 1 | Registro | AX ← BX | No cambian |
-| `MOV BX, AX` | 13h | 1 | Registro | BX ← AX | No cambian |
-| `LOAD AX, [dir]` | 20h | 2 | Dirección | AX ← RAM[dir] vía MAR y MDR | No cambian |
-| `LOAD BX, [dir]` | 21h | 2 | Dirección | BX ← RAM[dir] vía MAR y MDR | No cambian |
-| `STORE [dir], AX` | 30h | 2 | Dirección | RAM[dir] ← AX vía MAR y MDR | No cambian |
-| `STORE [dir], BX` | 31h | 2 | Dirección | RAM[dir] ← BX vía MAR y MDR | No cambian |
-| `ADD AX, imm` | 40h | 2 | Inmediato | AX ← AX + imm | ZF, CF, SF |
-| `ADD AX, BX` | 41h | 1 | Registro | AX ← AX + BX | ZF, CF, SF |
-| `ADD BX, imm` | 42h | 2 | Inmediato | BX ← BX + imm | ZF, CF, SF |
-| `ADD BX, AX` | 43h | 1 | Registro | BX ← BX + AX | ZF, CF, SF |
-| `SUB AX, imm` | 50h | 2 | Inmediato | AX ← AX − imm | ZF, CF, SF |
-| `SUB AX, BX` | 51h | 1 | Registro | AX ← AX − BX | ZF, CF, SF |
-| `SUB BX, imm` | 52h | 2 | Inmediato | BX ← BX − imm | ZF, CF, SF |
-| `SUB BX, AX` | 53h | 1 | Registro | BX ← BX − AX | ZF, CF, SF |
-| `INC AX` | 60h | 1 | Registro | AX ← AX + 1 | ZF, CF, SF |
-| `INC BX` | 61h | 1 | Registro | BX ← BX + 1 | ZF, CF, SF |
-| `DEC AX` | 62h | 1 | Registro | AX ← AX − 1 | ZF, CF, SF |
-| `DEC BX` | 63h | 1 | Registro | BX ← BX − 1 | ZF, CF, SF |
-| `CMP AX, imm` | 70h | 2 | Inmediato | Evalúa AX − imm (AX no cambia) | ZF, CF, SF |
-| `CMP AX, BX` | 71h | 1 | Registro | Evalúa AX − BX (AX no cambia) | ZF, CF, SF |
-| `CMP BX, imm` | 72h | 2 | Inmediato | Evalúa BX − imm (BX no cambia) | ZF, CF, SF |
-| `CMP BX, AX` | 73h | 1 | Registro | Evalúa BX − AX (BX no cambia) | ZF, CF, SF |
-| `JMP dir` | 80h | 2 | Dirección | PC ← dir (Salto incondicional) | No cambian |
-| `JZ dir` | 90h | 2 | Dirección | PC ← dir si ZF = 1 | No cambian |
-| `JNZ dir` | A0h | 2 | Dirección | PC ← dir si ZF = 0 | No cambian |
-| `HLT` | FFh | 1 | Ninguno | Detiene la CPU (Estado HALTED) | No cambian |
-
----
-
-## 🧩 Responsabilidad de los Módulos VBA
-
-| Módulo | Capa | Responsabilidad Principal |
-|---|---|---|
-| [`modMemory`](src/modMemory.bas) | Datos | Administra la matriz RAM de 256 bytes y provee primitivas de lectura (`ReadMem`), escritura (`WriteMem`), vaciado (`ClearMem`) y carga en bloque (`LoadBlock`). |
-| [`modRegisters`](src/modRegisters.bas) | Datos | Mantiene el estado de los 6 registros de la CPU (`PC`, `IR`, `MAR`, `MDR`, `AX`, `BX`), su reinicio (`ResetRegisters`) y el incremento circular de `PC`. |
-| [`modFlags`](src/modFlags.bas) | Datos | Controla y actualiza el estado de las 3 banderas (`ZF`, `CF`, `SF`), calculando el signo en complemento a 2 y el acarreo de 8 bits. |
-| [`modISA`](src/modISA.bas) | Datos | Define la tabla de codificación de instrucciones, asignación de opcodes, modos de direccionamiento y funciones de decodificación (`DecodeByte`, `MnemonicToOpcode`). |
-| [`modALU`](src/modALU.bas) | Operación | Ejecuta cálculos aritméticos y lógicos de 8 bits (`ADD`, `SUB`, `INC`, `DEC`, `CMP`, `AND`, `OR`, `XOR`, `NOT`) y desencadena la actualización atómica de banderas. |
-| [`modExecution`](src/modExecution.bas) | Operación | Despacha la ejecución de la instrucción actual decodificada, aplica saltos condicionales (`JZ`, `JNZ`, `JMP`) y efectúa la fase Store hacia registros o RAM. |
-| [`modControlUnit`](src/modControlUnit.bas) | Control | Controla la Máquina de Estados Finita (FSM), la secuencia del ciclo de reloj (`FETCH`, `DECODE`, `EXECUTE`, `STORE`) y gestiona las rutinas de los botones (`STEP`, `RUN`, `PAUSE`, `RESET`, `LOAD`). |
-| [`modUI`](src/modUI.bas) | Presentación | Refresca la interfaz de Excel tras cada micro-operación, aplicando resaltado visual de colores a la fase activa, el camino de datos y la celda de memoria en uso. |
-| [`modLogger`](src/modLogger.bas) | Presentación | Escribe cada sub-paso de reloj en la hoja `LOG` con el detalle de registros, banderas y micro-operaciones realizadas. |
-| [`modUtils`](src/modUtils.bas) | Auxiliar | Provee funciones puras de conversión (Hex, Bin, Dec), formateo de cadenas y validaciones de rangos de 8 bits. |
-
----
-
-## 🔄 Diagramas del Ciclo y Camino de Datos
-
-### 1. Diagrama de la Arquitectura por Capas
-
-```mermaid
-flowchart LR
-  subgraph Hojas Excel [Presentación / Interfaz]
-    cpu[CPU]
-    memh[MEMORY]
-    prog[PROGRAM]
-    logh[LOG]
-    isa[ISA]
-  end
-  subgraph Modulos VBA [Control y Operación]
-    ui[modUI]
-    ctrl[modControlUnit]
-    exe[modExecution]
-    alu[modALU]
-    flags[modFlags]
-    isam[modISA]
-    regs[modRegisters]
-    ram[modMemory]
-    logger[modLogger]
-  end
-  cpu --> ui
-  memh --> ui
-  prog --> ui
-  ui --> ctrl
-  ctrl --> exe
-  ctrl --> ram
-  ctrl --> regs
-  exe --> alu
-  exe --> flags
-  exe --> isam
-  exe --> ram
-  ctrl --> logger
-  logger --> logh
-  isam --> isa
-```
-
-### 2. Ciclo de Instrucción y Flujo de Datos (`PC → MAR → RAM → MDR → IR`)
-
-```mermaid
-sequenceDiagram
-  autonumber
-  participant PC as PC (Program Counter)
-  participant MAR as MAR (Address Reg)
-  participant RAM as RAM (Memoria 256B)
-  participant MDR as MDR (Data Reg)
-  participant IR as IR (Instruction Reg)
-  participant UC as Unidad de Control (Decode)
-  participant ALU as ALU / Registros (Execute/Store)
-
-  Note over PC, IR: 1. FASE FETCH (Búsqueda de instrucción/byte)
-  PC->>MAR: MAR ← PC
-  MAR->>RAM: Colocar dirección en bus
-  RAM->>MDR: MDR ← RAM[RAM]
-  MDR->>IR: IR ← MDR
-  PC->>PC: PC ← (PC + 1) mod 256
-
-  Note over UC: 2. FASE DECODE (Decodificación)
-  IR->>UC: UC interpreta Opcode (modISA) y determina operandos
-
-  Note over ALU: 3. FASE EXECUTE (Ejecución)
-  UC->>ALU: ALU procesa operación (ADD, SUB, CMP...) o evalúa salto (JZ)
-
-  Note over ALU, RAM: 4. FASE STORE (Escritura / Write-Back)
-  ALU->>ALU: Guardar resultado en AX/BX o escribir en RAM[MAR] vía MDR
+### 6.2 Serie de Fibonacci por Hardware (Overflow CF)
+Demuestra el uso de variables en memoria y el control de desbordamiento de 8 bits mediante la bandera de acarreo y el salto condicional `JC`. Calcula la serie y almacena de forma segura el último valor válido (233).
+```assembly
+MOV AX, 00h
+STORE [80h], AX   ; A = 0
+MOV AX, 01h
+STORE [81h], AX   ; B = 1
+LOAD AX, [80h]    ; <-- INICIO DEL BUCLE
+LOAD BX, [81h]
+ADD AX, BX        ; F_new = A + B
+JC 18h            ; SALTO POR DESBORDAMIENTO (>255)
+STORE [82h], AX   ; Guarda ultimo F_new válido
+STORE [81h], AX   ; B_new = F_new
+MOV AX, BX        
+STORE [80h], AX   ; A_new = B_old
+JMP 08h           ; VOLVER AL BUCLE
+HLT               ; <-- FIN DE EJECUCIÓN (Dirección 18h)
 ```
 
 ---
 
-## 📁 Estructura del Repositorio
+## 7. Apéndices
 
-| Ruta | Contenido |
-|---|---|
-| `SimuladorCPU.xlsm` | Libro de Microsoft Excel con macros VBA (ejecutable principal). |
-| [`src/`](src/) | Módulos de código VBA exportados en formato texto para versionado con Git. |
-| [`docs/ANALISIS.md`](docs/ANALISIS.md) | Análisis de requerimientos, consigna académica y especificación de la rúbrica. |
-| [`docs/ARQUITECTURA.md`](docs/ARQUITECTURA.md) | Especificación detallada de la arquitectura, modelo de datos y diseño por capas. |
-| [`docs/ISA.md`](docs/ISA.md) | Tabla completa del conjunto de instrucciones (ISA) de 8 bits y opcodes. |
-| [`docs/PROGRAMA_DEMO.md`](docs/PROGRAMA_DEMO.md) | Programa demostrativo (multiplicación por sumas sucesivas) y traza de ejecución. |
-| [`docs/PRUEBAS.md`](docs/PRUEBAS.md) | Reporte de pruebas unitarias e integrales en VBA. |
+### Apéndice A: Conjunto Completo de Instrucciones (ISA)
+*El simulador utiliza Opcodes estandarizados internamente.*
+
+| Instrucción | Opcode | Bytes | Descripción Abreviada | Modifica Flags |
+|---|---|---|---|---|
+| `MOV AX, imm` | `10h` | 2 | Carga inmediato en AX | - |
+| `MOV AX, BX`  | `12h` | 1 | Copia de Registro a Registro | - |
+| `LOAD AX, [dir]`| `20h` | 2 | Lectura Directa de RAM a AX | - |
+| `STORE [dir], AX`| `30h` | 2 | Escritura Directa de AX a RAM | - |
+| `ADD AX, BX`  | `41h` | 1 | Suma Aritmética | ZF, CF, SF |
+| `INC AX`      | `50h` | 1 | Incremento en 1 | ZF, CF, SF |
+| `DEC AX`      | `60h` | 1 | Decremento en 1 | ZF, CF, SF |
+| `CMP AX, BX`  | `72h` | 1 | Resta simulada (solo altera Flags) | ZF, CF, SF |
+| `JMP dir`     | `80h` | 2 | Salto Incondicional | - |
+| `JZ dir`      | `90h` | 2 | Jump if Zero (`ZF=1`) | - |
+| `JC dir`      | `98h` | 2 | Jump if Carry (`CF=1`) | - |
+| `AND AX, BX`  | `B1h` | 1 | AND lógico bit a bit | ZF, SF |
+| `NOT AX`      | `F0h` | 1 | Complemento a 1 de AX | ZF, SF |
+| `HLT`         | `F4h` | 1 | Detiene la CPU (Halt) | - |
+
+*(Ver hoja `ISA` en el libro de Excel para los opcodes en notación binaria completa).*
+
+---
+Desarrollado para la materia SIS131. Implementado bajo las directrices de la Arquitectura Von Neumann.
