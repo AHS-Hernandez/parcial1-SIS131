@@ -313,7 +313,7 @@ Private Function PrepararPlantilla(ByVal linea As String, ByRef operando As Byte
     End If
 
     partes = Split(s, " ")
-    If partes(0) = "JMP" Or partes(0) = "JZ" Or partes(0) = "JNZ" Then
+    If partes(0) = "JMP" Or partes(0) = "JZ" Or partes(0) = "JNZ" Or partes(0) = "JC" Then
         If UBound(partes) < 1 Then
             Err.Raise ERR_LOAD, "Ensamblar", "Falta direccion en: " & linea
         End If
@@ -384,7 +384,7 @@ Private Function LeerFilasProgram() As String()
     Dim col As Range
 
     On Error GoTo Fallo
-    Set rng = Range("rngProgram")
+    Set rng = ThisWorkbook.Worksheets("PROGRAM").Range("A4:A100")
     If rng Is Nothing Then Err.Raise ERR_LOAD, "DoLoad", "No existe el rango rngProgram"
 
     If rng.Columns.Count >= 1 Then
