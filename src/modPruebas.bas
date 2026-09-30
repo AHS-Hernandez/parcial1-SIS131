@@ -408,9 +408,6 @@ End Sub
 
 ' Tras DoLoad desde la hoja PROGRAM: deja N=3, M=4, producto=0 en datos.
 Public Sub SembrarDatosDemo()
-    WriteMem &H80, 3
-    WriteMem &H81, 4
-    WriteMem &H82, 0
     Debug.Print "datos demo", "[80h]=3 [81h]=4 [82h]=0"
 End Sub
 
@@ -438,11 +435,8 @@ Public Sub PruebaDemoStepRun()
 
     Debug.Print "=== Demo STEP (LOAD + resaltado + log) ==="
     ClearMem
-    WriteMem &H80, 3
-    WriteMem &H81, 4
-    WriteMem &H82, 0
+    ClearMem
     CargarPrograma lineas
-    SembrarDatosDemo
     DoReset
     CorrerHastaHltStep maxPasos
 
@@ -479,11 +473,8 @@ Public Sub PruebaDemoStepRun()
 
     Debug.Print "=== Demo RUN (mismo programa, delay via TickRun) ==="
     ClearMem
-    WriteMem &H80, 3
-    WriteMem &H81, 4
-    WriteMem &H82, 0
+    ClearMem
     CargarPrograma lineas
-    SembrarDatosDemo
     DoReset
     SetDelayMs 50
     CorrerHastaHltRun maxPasos
@@ -538,19 +529,16 @@ End Sub
 
 Private Function LineasDemoMultiplicacion() As String()
     Dim lineas() As String
-    ReDim lineas(0 To 11)
+    ReDim lineas(0 To 8)
     lineas(0) = "MOV AX, 00h"
-    lineas(1) = "LOAD BX, [80h]"
+    lineas(1) = "MOV BX, 03h"
     lineas(2) = "CMP BX, 00h"
-    lineas(3) = "JZ 12h"
-    lineas(4) = "LOAD BX, [81h]"
-    lineas(5) = "ADD AX, BX"
-    lineas(6) = "LOAD BX, [80h]"
-    lineas(7) = "DEC BX"
-    lineas(8) = "STORE [80h], BX"
-    lineas(9) = "JMP 02h"
-    lineas(10) = "STORE [82h], AX"
-    lineas(11) = "HLT"
+    lineas(3) = "JZ 0Dh"
+    lineas(4) = "ADD AX, 04h"
+    lineas(5) = "DEC BX"
+    lineas(6) = "JMP 04h"
+    lineas(7) = "STORE [82h], AX"
+    lineas(8) = "HLT"
     LineasDemoMultiplicacion = lineas
 End Function
 
@@ -953,4 +941,25 @@ Public Sub PruebaFlujoHltValidaciones()
     Exit Sub
 Fallo:
     Debug.Print "FALLO PruebaFlujoHltValidaciones", Err.Number, Err.Description
+End Sub
+
+Public Sub DumpAXToText()
+    Dim i As Long
+    Dim f As Integer
+    Dim lineas() As String
+    
+    f = FreeFile
+    Open "C:to Semestre\parcial1-SIS131\scratchx_dump.txt" For Output As #f
+    
+    lineas = LineasDemoMultiplicacion()
+    CargarPrograma lineas
+    SembrarDatosDemo
+    DoReset
+    
+    For i = 1 To 60
+        DoStep
+        Print #f, "Paso " & i & " - Fase " & FaseActual & " - AX: " & AX & " BX: " & BX & " Temp: " & Temporal & " PC: " & PC
+    Next i
+    
+    Close #f
 End Sub

@@ -69,6 +69,7 @@ End Sub
 Public Sub PulirInterfaz()
     On Error GoTo Fallo
     Application.ScreenUpdating = False
+    AsegurarNombresUI
     PulirHojaCPU
     PulirHojaMEMORY
     PulirHojaPROGRAM
@@ -232,33 +233,36 @@ End Sub
 Private Sub AsegurarNombresUI()
     Dim n As Name
     On Error Resume Next
-    Err.Clear
-    Set n = ThisWorkbook.Names("rngFlujo")
-    If Err.Number <> 0 Then
-        Err.Clear
-        ThisWorkbook.Names.Add Name:="rngFlujo", RefersTo:="=CPU!$C$6"
-    End If
-    Err.Clear
-    Set n = ThisWorkbook.Names("rngVistaMem")
-    If Err.Number <> 0 Then
-        Err.Clear
-        ThisWorkbook.Names.Add Name:="rngVistaMem", RefersTo:="=MEMORY!$D$22"
-    End If
-    Err.Clear
-    Set n = ThisWorkbook.Names("rngPaso")
-    If Err.Number <> 0 Then
-        Err.Clear
-        ThisWorkbook.Names.Add Name:="rngPaso", RefersTo:="=CPU!$J$4"
-    End If
-    Err.Clear
-    Set n = ThisWorkbook.Names("rngPipeFetch")
-    If Err.Number <> 0 Then
-        Err.Clear
-        ThisWorkbook.Names.Add Name:="rngPipeFetch", RefersTo:="=CPU!$B$3"
-        ThisWorkbook.Names.Add Name:="rngPipeDecode", RefersTo:="=CPU!$C$3"
-        ThisWorkbook.Names.Add Name:="rngPipeExecute", RefersTo:="=CPU!$D$3"
-        ThisWorkbook.Names.Add Name:="rngPipeStore", RefersTo:="=CPU!$E$3"
-    End If
+    
+    ThisWorkbook.Names.Add Name:="rngState", RefersTo:="=CPU!$B$9"
+    ThisWorkbook.Names.Add Name:="rngPhase", RefersTo:="=CPU!$D$9"
+    
+    ThisWorkbook.Names.Add Name:="rngPC", RefersTo:="=CPU!$B$10"
+    ThisWorkbook.Names.Add Name:="rngIR", RefersTo:="=CPU!$B$11"
+    ThisWorkbook.Names.Add Name:="rngMAR", RefersTo:="=CPU!$B$12"
+    ThisWorkbook.Names.Add Name:="rngMDR", RefersTo:="=CPU!$B$13"
+    
+    ThisWorkbook.Names.Add Name:="rngInstruccion", RefersTo:="=CPU!$B$14"
+    ThisWorkbook.Names.Add Name:="rngMicroOp", RefersTo:="=CPU!$B$15"
+    
+    ThisWorkbook.Names.Add Name:="rngAX", RefersTo:="=CPU!$G$10"
+    ThisWorkbook.Names.Add Name:="rngBX", RefersTo:="=CPU!$G$11"
+    ThisWorkbook.Names.Add Name:="rngTemp", RefersTo:="=CPU!$G$12"
+    
+    ThisWorkbook.Names.Add Name:="rngZF", RefersTo:="=CPU!$G$14"
+    ThisWorkbook.Names.Add Name:="rngCF", RefersTo:="=CPU!$G$15"
+    ThisWorkbook.Names.Add Name:="rngSF", RefersTo:="=CPU!$G$16"
+    
+    ThisWorkbook.Names.Add Name:="rngPaso", RefersTo:="=CPU!$I$3"
+    ThisWorkbook.Names.Add Name:="rngDelay", RefersTo:="=CPU!$I$21"
+    ThisWorkbook.Names.Add Name:="rngFlujo", RefersTo:="=CPU!$J$50"
+    
+    ThisWorkbook.Names.Add Name:="rngPipeFetch", RefersTo:="=CPU!$B$3"
+    ThisWorkbook.Names.Add Name:="rngPipeDecode", RefersTo:="=CPU!$C$3"
+    ThisWorkbook.Names.Add Name:="rngPipeExecute", RefersTo:="=CPU!$D$3"
+    ThisWorkbook.Names.Add Name:="rngPipeStore", RefersTo:="=CPU!$E$3"
+    
+    ThisWorkbook.Names.Add Name:="rngVistaMem", RefersTo:="=MEMORY!$D$22"
     On Error GoTo 0
 End Sub
 
@@ -274,8 +278,7 @@ Private Sub AsegurarEtiquetasPipeline()
     If Len(Trim$(CStr(ws.Range("C3").Value & ""))) = 0 Then ws.Range("C3").Value = "DECODE"
     If Len(Trim$(CStr(ws.Range("D3").Value & ""))) = 0 Then ws.Range("D3").Value = "EXECUTE"
     If Len(Trim$(CStr(ws.Range("E3").Value & ""))) = 0 Then ws.Range("E3").Value = "STORE"
-    If Len(Trim$(CStr(ws.Range("I4").Value & ""))) = 0 Then ws.Range("I4").Value = "Paso #"
-    On Error GoTo 0
+        On Error GoTo 0
 End Sub
 
 Private Sub PintarEstadoYFase()
@@ -583,6 +586,9 @@ End Sub
 Private Sub PulirHojaCPU()
     Dim ws As Worksheet
     Set ws = ThisWorkbook.Worksheets("CPU")
+    
+    ws.Cells.ClearFormats
+    ws.Cells.ClearContents
 
     ws.Range("A1").Value = "Simulador de CPU 8 bits"
     ws.Range("A1").Font.Name = "Calibri"
@@ -597,102 +603,141 @@ Private Sub PulirHojaCPU()
 
     ws.Range("A3").Value = "Ciclo"
     ws.Range("A3").Font.Bold = True
-    ws.Range("B3").Value = "FETCH"
-    ws.Range("C3").Value = "DECODE"
-    ws.Range("D3").Value = "EXECUTE"
-    ws.Range("E3").Value = "STORE"
-    ws.Range("B3:E3").Font.Name = "Calibri"
-    ws.Range("B3:E3").Font.Size = 11
-    ws.Range("B3:E3").HorizontalAlignment = xlCenter
-    ws.Range("B3:E3").Borders.LineStyle = xlContinuous
+    ws.Range("A3").Font.Size = 14
 
-    ws.Range("A4").Value = "Estado"
-    ws.Range("A4").Font.Bold = True
-    ws.Range("D4").Value = "Fase"
-    ws.Range("D4").Font.Bold = True
-    ws.Range("I4").Value = "Paso #"
-    ws.Range("I4").Font.Bold = True
+    ws.Range("H3").Value = "Paso #"
+    ws.Range("H3").Font.Bold = True
+    ws.Range("H3").Font.Size = 14
+    ws.Range("rngPaso").Font.Size = 14
+    
+    ' ==========================================
+    ' CONTENEDOR 1: UNIDAD DE CONTROL (U.C.) (Bajado a fila 8)
+    ' ==========================================
+    EstiloBloqueTitulo ws.Range("A8"), "UNIDAD DE CONTROL (U.C.)"
+    ws.Range("A8:D8").Merge
+    
+    ws.Range("A9").Value = "Estado"
+    ws.Range("A9").Font.Bold = True
+    ws.Range("C9").Value = "Fase"
+    ws.Range("C9").Font.Bold = True
     ws.Range("rngState").Font.Name = "Consolas"
     ws.Range("rngState").Font.Size = 12
     ws.Range("rngState").Font.Bold = True
     ws.Range("rngPhase").Font.Name = "Consolas"
     ws.Range("rngPhase").Font.Size = 12
     ws.Range("rngPhase").Font.Bold = True
-
-    EstiloBloqueTitulo ws.Range("A6"), "UNIDAD DE CONTROL (U.C.) - CAMINO DE DATOS"
-    EstiloBloqueTitulo ws.Range("E6"), "REGISTROS DE PROP�SITO GENERAL"
-    EstiloBloqueTitulo ws.Range("I6"), "ALU / ESTADO Y CONTROL"
+    
+    ws.Range("A10").Value = "PC"
+    ws.Range("A11").Value = "IR"
+    ws.Range("A12").Value = "MAR"
+    ws.Range("A13").Value = "MDR"
+    ws.Range("A10:A13").Font.Bold = True
+    
+    ws.Range("C10").Value = "Siguiente instruccion"
+    ws.Range("C11").Value = "Opcode crudo"
+    ws.Range("C12").Value = "Direccion hacia RAM"
+    ws.Range("C13").Value = "Dato leido / a escribir"
+    ws.Range("C10:C13").Font.Size = 9
+    ws.Range("C10:C13").Font.Color = RGB(89, 89, 89)
 
     EstiloCeldaRegistro ws.Range("rngPC")
     EstiloCeldaRegistro ws.Range("rngIR")
     EstiloCeldaRegistro ws.Range("rngMAR")
     EstiloCeldaRegistro ws.Range("rngMDR")
-    EstiloCeldaRegistro ws.Range("rngAX")
-    EstiloCeldaRegistro ws.Range("rngBX")
-
-    ws.Range("A7").Value = "PC"
-    ws.Range("A8").Value = "IR"
-    ws.Range("A9").Value = "MAR"
-    ws.Range("A10").Value = "MDR"
-    ws.Range("A7:A10").Font.Bold = True
-    ws.Range("C7").Value = "Siguiente instruccion"
-    ws.Range("C8").Value = "Opcode en curso"
-    ws.Range("C9").Value = "Direccion hacia RAM"
-    ws.Range("C10").Value = "Dato leido / a escribir"
-    ws.Range("C7:C10").Font.Size = 9
-    ws.Range("C7:C10").Font.Color = RGB(89, 89, 89)
-
-    ws.Range("E7").Value = "AX"
-    ws.Range("E8").Value = "BX"
-    ws.Range("E7:E8").Font.Bold = True
-    ws.Range("G7").Value = "Acumulador"
-    ws.Range("G8").Value = "Proposito general"
-    ws.Range("G7:G8").Font.Size = 9
-    ws.Range("G7:G8").Font.Color = RGB(89, 89, 89)
-
-    EstiloBloqueTitulo ws.Range("A12"), "REGISTRO DE ESTADO (FLAGS)"
-    EstiloBloqueTitulo ws.Range("E12"), "DECODIFICADOR DE INSTRUCCI�N"
-    ws.Range("A13").Value = "ZF"
-    ws.Range("A14").Value = "CF"
-    ws.Range("A15").Value = "SF"
-    ws.Range("A13:A15").Font.Bold = True
-    ws.Range("E13").Value = "Micro-operacion"
-    ws.Range("E13").Font.Bold = True
+    
+    ' Nuevas filas limpias para Decodificacion y Micro-Op
+    ws.Range("A14").Value = "Decodific."
+    ws.Range("A14").Font.Bold = True
+    ws.Range("B14:D14").Merge
     ws.Range("rngInstruccion").Font.Name = "Consolas"
-    ws.Range("rngInstruccion").Font.Size = 12
+    ws.Range("rngInstruccion").Font.Size = 11
     ws.Range("rngInstruccion").Font.Bold = True
+    ws.Range("rngInstruccion").HorizontalAlignment = xlCenter
+    ws.Range("rngInstruccion").Interior.Color = RGB(255, 250, 205) ' Amarillo suave (como antes)
+    ws.Range("rngInstruccion").Borders.LineStyle = xlContinuous
+    
+    ws.Range("A15").Value = "Micro-Op"
+    ws.Range("A15").Font.Bold = True
+    ws.Range("B15:D15").Merge
     ws.Range("rngMicroOp").Font.Name = "Consolas"
     ws.Range("rngMicroOp").Font.Size = 10
+    ws.Range("rngMicroOp").HorizontalAlignment = xlCenter
+    ws.Range("rngMicroOp").Interior.Color = RGB(255, 250, 205) ' Amarillo suave
+    ws.Range("rngMicroOp").Borders.LineStyle = xlContinuous
+    
+    ws.Range("A8:D16").BorderAround xlContinuous, xlMedium
+    
+    ' Limpiar basura anterior
+    ws.Range("I4").ClearContents
+    ws.Range("I4").Borders.LineStyle = xlNone
 
-    EstiloBloqueTitulo ws.Range("A17"), "PANEL DE CONTROL INTERACTIVO"
-    ws.Range("G17").Value = "Retardo (ms)"
-    ws.Range("G17").Font.Bold = True
-    EstiloBotonCelda ws.Range("A18"), "STEP"
-    EstiloBotonCelda ws.Range("B18"), "RUN"
-    EstiloBotonCelda ws.Range("C18"), "PAUSE"
-    EstiloBotonCelda ws.Range("D18"), "RESET"
-    EstiloBotonCelda ws.Range("E18"), "LOAD"
+    ' ==========================================
+    ' CONTENEDOR 2: ALU & REGISTROS (Bajado a fila 8)
+    ' ==========================================
+    EstiloBloqueTitulo ws.Range("F8"), "ALU & REGISTROS"
+    ws.Range("F8:I8").Merge
+    
+    ws.Range("F10").Value = "AX"
+    ws.Range("F11").Value = "BX"
+    ws.Range("F12").Value = "Temp"
+    ws.Range("F10:F12").Font.Bold = True
+    
+    ws.Range("H10").Value = "Acumulador"
+    ws.Range("H11").Value = "Proposito general"
+    ws.Range("H12").Value = "Resultado temporal"
+    ws.Range("H10:H12").Font.Size = 9
+    ws.Range("H10:H12").Font.Color = RGB(89, 89, 89)
+
+    EstiloCeldaRegistro ws.Range("rngAX")
+    EstiloCeldaRegistro ws.Range("rngBX")
+    EstiloCeldaRegistro ws.Range("rngTemp")
+    
+    ws.Range("F14").Value = "ZF"
+    ws.Range("F15").Value = "CF"
+    ws.Range("F16").Value = "SF"
+    ws.Range("F14:F16").Font.Bold = True
+    
+    ws.Range("H14").Value = "Cero (Zero)"
+    ws.Range("H15").Value = "Acarreo (Carry)"
+    ws.Range("H16").Value = "Signo (Sign)"
+    ws.Range("H14:H16").Font.Size = 9
+    ws.Range("H14:H16").Font.Color = RGB(89, 89, 89)
+    
+    ws.Range("F8:I17").BorderAround xlContinuous, xlMedium
+
+    ' ==========================================
+    ' PANEL DE CONTROL (Bajado a fila 21)
+    ' ==========================================
+    EstiloBloqueTitulo ws.Range("A21"), "PANEL DE CONTROL INTERACTIVO"
+    ws.Range("A21:E21").Merge
+    
+    ws.Range("H21").Value = "Retardo (ms)"
+    ws.Range("H21").Font.Bold = True
     ws.Range("rngDelay").Font.Name = "Consolas"
     ws.Range("rngDelay").Font.Size = 12
     If Len(Trim$(CStr(ws.Range("rngDelay").Value & ""))) = 0 Then
         ws.Range("rngDelay").Value = 200
     End If
-
-    ws.Columns("A").ColumnWidth = 12
-    ws.Columns("B").ColumnWidth = 10
+    
+    ' Espaciado de columnas
+    ws.Columns("A").ColumnWidth = 14
+    ws.Columns("B").ColumnWidth = 12
     ws.Columns("C").ColumnWidth = 28
-    ws.Columns("D").ColumnWidth = 8
-    ws.Columns("E").ColumnWidth = 12
+    ws.Columns("D").ColumnWidth = 12
+    ws.Columns("E").ColumnWidth = 4
     ws.Columns("F").ColumnWidth = 14
-    ws.Columns("G").ColumnWidth = 18
-    ws.Columns("H").ColumnWidth = 3
-    ws.Columns("I").ColumnWidth = 12
+    ws.Columns("G").ColumnWidth = 10
+    ws.Columns("H").ColumnWidth = 22
+    ws.Columns("I").ColumnWidth = 10
     ws.Columns("J").ColumnWidth = 10
+    
     ws.Rows("1").RowHeight = 28
-    ws.Rows("3").RowHeight = 22
-    ws.Rows("18").RowHeight = 24
+    ws.Rows("3").RowHeight = 30 ' Para los botones del pipeline
+    ws.Rows("8").RowHeight = 24
+    ws.Rows("21").RowHeight = 24
 
     AsegurarShapesPipeline ws
+    AjustarColoresBotones ws
 End Sub
 
 
@@ -759,21 +804,38 @@ End Sub
 
 Private Sub PulirHojaPROGRAM()
     Dim ws As Worksheet
+    Dim rng As Range
     Set ws = ThisWorkbook.Worksheets("PROGRAM")
-    ws.Range("A1").Value = "PROGRAM - demo: multiplicacion por sumas (N*[80h] x M*[81h] -> [82h])"
+    ws.Range("A1").Value = "PROGRAM - demo: multiplicacion (03h x 04h) en registros"
     ws.Range("A1").Font.Size = 14
     ws.Range("A1").Font.Bold = True
     ws.Range("A1").Font.Color = COL_TITULO
     ws.Range("A1").Interior.Color = RGB(232, 240, 254)
-    On Error Resume Next
-    Range("rngProgram").Font.Name = "Consolas"
-    Range("rngProgram").Font.Size = 12
-    Range("rngProgram").Borders.LineStyle = xlContinuous
-    On Error GoTo 0
-    ws.Columns("A").ColumnWidth = 72
-    ws.Range("B1").Value = "LOAD escribe 00h..; datos 80h-82h se siembran aparte"
+    
+    ws.Range("B1").Value = "LOAD escribe esto en la RAM. No requiere variables externas."
     ws.Range("B1").Font.Size = 9
     ws.Range("B1").Font.Italic = True
+
+    On Error Resume Next
+    Set rng = Range("rngProgram")
+    rng.Font.Name = "Consolas"
+    rng.Font.Size = 12
+    rng.Borders.LineStyle = xlContinuous
+    
+    ' Escribir el programa Demo (Opcion 1: Puro Registro)
+    rng.ClearContents
+    rng.Cells(1, 1).Value = "MOV AX, 00h"
+    rng.Cells(2, 1).Value = "MOV BX, 03h"
+    rng.Cells(3, 1).Value = "CMP BX, 00h"
+    rng.Cells(4, 1).Value = "JZ 0Dh"
+    rng.Cells(5, 1).Value = "ADD AX, 04h"
+    rng.Cells(6, 1).Value = "DEC BX"
+    rng.Cells(7, 1).Value = "JMP 04h"
+    rng.Cells(8, 1).Value = "STORE [82h], AX"
+    rng.Cells(9, 1).Value = "HLT"
+    On Error GoTo 0
+    
+    ws.Columns("A").ColumnWidth = 72
 End Sub
 
 Private Sub PulirHojaLOG()
@@ -897,66 +959,73 @@ Private Sub EstiloBotonCelda(ByVal celda As Range, ByVal texto As String)
 End Sub
 
 Private Sub AsegurarShapesPipeline(ByVal ws As Worksheet)
-    Dim left0 As Single
-    Dim top0 As Single
-    Dim w As Single
-    Dim h As Single
-    Dim gap As Single
     Dim i As Long
-    Dim nombres As Variant
-    Dim colores As Variant
+    Dim nombres As Variant, flechas As Variant
     Dim shp As Shape
+    Dim cellTarget As Range
 
     On Error Resume Next
     nombres = Array("shpFetch", "shpDecode", "shpExecute", "shpStore")
-    colores = Array(COL_FETCH, COL_DECODE, COL_EXECUTE, COL_STORE)
-
-    ' Fila visual debajo de controles (aprox fila 20)
-    left0 = ws.Range("A20").Left
-    top0 = ws.Range("A20").Top
-    w = 90
-    h = 28
-    gap = 12
-
-    For i = 0 To 3
-        Err.Clear
-        Set shp = Nothing
-        Set shp = ws.Shapes(CStr(nombres(i)))
-        If shp Is Nothing Then
-            Set shp = ws.Shapes.AddShape(msoShapeRoundedRectangle, left0 + i * (w + gap), top0, w, h)
-            shp.Name = CStr(nombres(i))
-        End If
-        shp.Fill.ForeColor.RGB = colores(i)
-        shp.Line.ForeColor.RGB = RGB(60, 60, 60)
-        Err.Clear
-        shp.TextFrame2.TextRange.Characters.Text = UCase$(Replace(CStr(nombres(i)), "shp", ""))
-        If Err.Number <> 0 Then
-            Err.Clear
-            shp.TextFrame.Characters.Text = UCase$(Replace(CStr(nombres(i)), "shp", ""))
-            shp.TextFrame.HorizontalAlignment = xlHAlignCenter
-            shp.TextFrame.VerticalAlignment = xlVAlignCenter
-        Else
-            shp.TextFrame2.TextRange.Font.Bold = True
-            shp.TextFrame2.TextRange.Font.Size = 11
-            shp.TextFrame2.TextRange.Font.Fill.ForeColor.RGB = RGB(20, 20, 20)
-            shp.TextFrame2.VerticalAnchor = msoAnchorMiddle
-            shp.TextFrame2.TextRange.ParagraphFormat.Alignment = msoAlignCenter
-        End If
-    Next i
-
-    ' Flechas entre etapas
-    Dim flechas As Variant
     flechas = Array("shpArr1", "shpArr2", "shpArr3")
-    For i = 0 To 2
-        Set shp = Nothing
-        Set shp = ws.Shapes(CStr(flechas(i)))
-        If shp Is Nothing Then
-            Set shp = ws.Shapes.AddShape(msoShapeRightArrow, left0 + (i + 1) * w + i * gap - 8, top0 + 6, 16, 16)
-            shp.Name = CStr(flechas(i))
+    
+    ' Alinear con fila 3, columnas B a E
+    For i = 0 To 3
+        Set shp = ws.Shapes(CStr(nombres(i)))
+        If Not shp Is Nothing Then
+            Set cellTarget = ws.Cells(3, 2 + i) ' B3, C3, D3, E3
+            shp.Top = cellTarget.Top + 2
+            shp.Left = cellTarget.Left + 2
+            shp.Width = cellTarget.Width - 4
+            shp.Height = cellTarget.Height - 4
+            
+            ' Restaurar color base sobrio (RGB 200, 200, 200)
+            shp.Fill.ForeColor.RGB = RGB(200, 200, 200)
         End If
-        shp.Fill.ForeColor.RGB = RGB(80, 80, 80)
-        shp.Line.Visible = msoFalse
     Next i
+    
+    ' Alinear las flechas (opcional, si existen)
+    For i = 0 To 2
+        Set shp = ws.Shapes(CStr(flechas(i)))
+        If Not shp Is Nothing Then
+            Set cellTarget = ws.Cells(3, 2 + i)
+            shp.Top = cellTarget.Top + (cellTarget.Height / 2) - 5
+            shp.Left = cellTarget.Left + cellTarget.Width - 6
+        End If
+    Next i
+    On Error GoTo 0
+End Sub
+
+Private Sub AjustarColoresBotones(ByVal ws As Worksheet)
+    Dim shp As Shape
+    Dim grisOscuro As Long
+    Dim targetTop As Single
+    Dim i As Long
+    Dim nombres As Variant
+    
+    grisOscuro = RGB(89, 89, 89) ' Gris oscuro original
+    nombres = Array("btnStep", "btnRun", "btnPause", "btnReset", "btnLoad")
+    
+    On Error Resume Next
+    targetTop = ws.Range("A21").Top + ws.Rows(21).Height + 2 ' Fila 22 real
+    
+    For i = 0 To 4
+        Set shp = ws.Shapes(CStr(nombres(i)))
+        If Not shp Is Nothing Then
+            ' Mover a la fila 22 y acomodar su ancho al de la celda
+            shp.Top = targetTop
+            shp.Left = ws.Cells(22, i + 1).Left + 2
+            shp.Width = ws.Cells(22, i + 1).Width - 4
+            shp.Height = ws.Cells(22, i + 1).Height - 4
+        End If
+    Next i
+    
+    ' Ajustar colores de los sobrios al gris oscuro
+    Set shp = ws.Shapes("btnStep")
+    If Not shp Is Nothing Then shp.Fill.ForeColor.RGB = grisOscuro
+    Set shp = ws.Shapes("btnPause")
+    If Not shp Is Nothing Then shp.Fill.ForeColor.RGB = grisOscuro
+    Set shp = ws.Shapes("btnLoad")
+    If Not shp Is Nothing Then shp.Fill.ForeColor.RGB = grisOscuro
     On Error GoTo 0
 End Sub
 
@@ -1081,3 +1150,4 @@ Private Function NombreFase(ByVal f As ePhase) As String
         Case Else: NombreFase = "?"
     End Select
 End Function
+
