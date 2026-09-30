@@ -54,14 +54,14 @@ La Unidad de Control actúa como el cerebro del procesador, orquestando las señ
 graph TD
     subgraph CPU [Unidad Central de Procesamiento]
         UC[Unidad de Control] --> |Señales de Control| ALU
-        ALU[Unidad Aritmético-Lógica] <--> REGS[(Banco de Registros<br/>AX, BX, Banderas)]
+        ALU[Unidad Aritmético-Lógica] <--> REGS[("Banco de Registros<br/>AX, BX, Banderas")]
         UC <--> PC[Program Counter]
         UC <--> IR[Instruction Register]
         UC <--> MAR[MAR]
         UC <--> MDR[MDR]
     end
     subgraph RAM [Memoria Principal]
-        MEM[(Memoria RAM 256 Bytes<br/>Arquitectura Von Neumann)]
+        MEM[("Memoria RAM 256 Bytes<br/>Arquitectura Von Neumann")]
     end
     MAR -->|Bus de Direcciones| MEM
     MDR <-->|Bus de Datos| MEM
@@ -84,18 +84,18 @@ El simulador respeta rigurosamente las 4 fases del ciclo máquina para procesar 
 
 ```mermaid
 flowchart TD
-    A((Inicio Ciclo)) --> B[FETCH]
-    B --> C{¿La instrucción<br/>requiere un operando<br/>de 2do byte?}
-    C -->|No (1 Byte)| D[DECODE]
-    C -->|Sí (2 Bytes)| B2[FETCH<br/>del Operando]
+    A(("Inicio Ciclo")) --> B[FETCH]
+    B --> C{"¿La instrucción<br/>requiere un operando<br/>de 2do byte?"}
+    C -->|No 1 Byte| D[DECODE]
+    C -->|Sí 2 Bytes| B2["FETCH<br/>del Operando"]
     B2 --> D
     D --> E[EXECUTE]
-    E --> F{¿Se debe guardar<br/>un resultado?}
-    F -->|Sí| G[STORE<br/>Write-back]
-    F -->|No| H((Fin Ciclo))
+    E --> F{"¿Se debe guardar<br/>un resultado?"}
+    F -->|Sí| G["STORE<br/>Write-back"]
+    F -->|No| H(("Fin Ciclo"))
     G --> H
     H --> A
-    E -.-> |Si es HLT| Z((Detener CPU))
+    E -.-> |Si es HLT| Z(("Detener CPU"))
     
     classDef fase fill:#e1f5fe,stroke:#01579b,stroke-width:2px;
     class B,B2,D,E,G fase;
